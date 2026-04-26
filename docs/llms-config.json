@@ -1,0 +1,11 @@
+{
+  "customSets": [
+    {
+      "label": "Custom Roles",
+      "description": "Creating custom RBAC roles via API and console UI",
+      "paths": ["custom-role*"]
+    }
+  ],
+  "promote": ["index*"],
+  "demote": []
+}
