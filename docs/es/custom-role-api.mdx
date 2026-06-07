@@ -1,0 +1,274 @@
+---
+title: Rol de Administración de Certificados - API
+description: >-
+  Crear un rol personalizado que restrinja a los usuarios a la gestión de
+  certificados SSL/TLS mediante API
+sidebar:
+  label: Rol Personalizado - API
+i18n:
+  sourceHash: a4031b2a23ae
+  translator: machine
+---
+
+Esta guía explica paso a paso cómo crear un rol RBAC personalizado en F5 Distributed Cloud
+que otorgue permisos para gestionar certificados SSL/TLS y cadenas de certificados
+utilizados por los HTTP Load Balancers. Para un enfoque basado en la interfaz de usuario, consulte la
+[guía simplificada de consola](./custom-role-ui).
+
+## Cómo funciona el RBAC de F5 XC
+
+F5 XC utiliza un modelo de permisos de tres niveles:
+
+```
+api_group_element  (solo lectura, definido por el sistema)
+       │
+       ▼
+   api_group       (solo lectura, definido por el sistema)
+       │
+       ▼
+     role           (CRUD completo — esto es lo que usted crea)
+```
+
+1. **`api_group_element`** — Define una ruta regex y métodos HTTP
+   (por ejemplo, `POST /api/config/.*/certificates`). Gestionado por el sistema; no puede
+   crear, modificar ni eliminar estos elementos.
+
+2. **`api_group`** — Una colección nombrada de referencias a `api_group_element`,
+   organizada por área funcional. Gestionado por el sistema; no puede crear, modificar ni
+   eliminar estos elementos. Los grupos utilizan convenciones de nomenclatura como `ves-io-proxy-read` o
+   `f5xc-waap-standard-admin`.
+
+3. **`role`** — Hace referencia a nombres de `api_group` en un array. **Este es el único
+   nivel que usted crea.** Utilice los endpoints de roles personalizados para asociar
+   `api_groups` específicos a un rol.
+
+Las operaciones de certificados para HTTP Load Balancers están agrupadas en los
+api_groups `ves-io-proxy-*` junto con otros recursos relacionados con proxy (HTTP Load
+Balancers, rutas, orígenes, etc.). No existen api_groups exclusivos para certificados
+— la plataforma organiza los permisos por área funcional, no por
+tipo de recurso individual.
+
+## Alcance y limitaciones
+
+Los api_groups `ves-io-proxy-read` y `ves-io-proxy-write` otorgan acceso a
+**todos los recursos relacionados con proxy**, no solo a certificados. Un usuario asignado a este
+rol también puede gestionar HTTP Load Balancers, orígenes, rutas y otros
+objetos dentro del alcance de proxy.
+
+El RBAC exclusivo para certificados no es posible en F5 XC. Tanto `api_group` como
+`api_group_element` son objetos definidos por el sistema y de solo lectura — la API solo
+expone endpoints GET para estos. Los roles solo pueden hacer referencia a nombres de `api_group`
+existentes, y no existe un `api_group` con alcance exclusivo para certificados.
+
+**Mitigación — aislamiento por namespace:** Cree un namespace dedicado para los
+recursos de certificados y asigne el rol `example-cert-admin` con alcance limitado
+únicamente a ese namespace. El usuario conserva los permisos a nivel de proxy pero no puede acceder
+a recursos en otros namespaces, lo que limita el radio de impacto del alcance
+más amplio del api_group.
+
+## Requisitos previos
+
+- Un token de API de F5 XC con privilegios de administrador
+- `curl` y `jq` instalados
+
+Configure sus variables de entorno:
+
+```bash
+export F5XC_TENANT="your-tenant"
+export F5XC_API_URL="https://${F5XC_TENANT}.console.ves.volterra.io"
+export F5XC_API_TOKEN="your-api-token"
+```
+
+## Paso 1: Descubrir los API Groups de Proxy
+
+Liste todos los objetos `api_group` definidos por el sistema y filtre las
+entradas relacionadas con proxy (que incluyen permisos de certificados):
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_groups" \
+  | jq '[.items[] | select(.name | test("ves-io-proxy")) | .name] | sort'
+```
+
+Salida esperada:
+
+```json
+[
+  "ves-io-proxy-app-firewall-read",
+  "ves-io-proxy-app-firewall-write",
+  "ves-io-proxy-monitor-read",
+  "ves-io-proxy-monitor-write",
+  "ves-io-proxy-read",
+  "ves-io-proxy-security-read",
+  "ves-io-proxy-security-write",
+  "ves-io-proxy-waf-read",
+  "ves-io-proxy-waf-write",
+  "ves-io-proxy-write"
+]
+```
+
+Para la gestión de certificados, los grupos relevantes son:
+
+| API Group | Otorga |
+| --------- | ------ |
+| `ves-io-proxy-read` | Acceso de lectura a recursos de proxy incluyendo certificados |
+| `ves-io-proxy-write` | Acceso de escritura a recursos de proxy incluyendo certificados |
+
+:::note
+Estos grupos cubren todos los recursos relacionados con proxy (HTTP Load Balancers, orígenes,
+rutas, certificados, cadenas de certificados, etc.), no solo certificados. F5 XC
+organiza los permisos por área funcional. Si necesita verificar qué rutas de API
+específicas otorga un grupo, consulte el endpoint `api_group_elements` descrito en
+la sección de Referencia de API.
+:::
+
+## Paso 2: Crear el Rol Personalizado
+
+Utilice el endpoint de creación de roles personalizados. El array `api_groups` hace referencia a los
+nombres de api_group definidos por el sistema descubiertos en el Paso 1.
+
+Cree el rol personalizado con acceso de lectura y escritura a recursos de proxy (incluyendo
+certificados y cadenas de certificados):
+
+```bash
+curl -s -X POST \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles" \
+  -d '{
+    "metadata": {
+      "name": "example-cert-admin",
+      "namespace": "system"
+    },
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read",
+      "ves-io-proxy-write"
+    ]
+  }'
+```
+
+## Paso 3: Verificar el Rol
+
+Recupere el rol utilizando el endpoint GET personalizado para confirmar que los `api_groups`
+están asociados:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  | jq '{name: .object.metadata.name, api_groups: .api_groups}'
+```
+
+Salida esperada:
+
+```json
+{
+  "name": "example-cert-admin",
+  "api_groups": [
+    "ves-io-proxy-read",
+    "ves-io-proxy-write"
+  ]
+}
+```
+
+## Paso 4: Actualizar el Rol (Opcional)
+
+Para agregar o eliminar `api_groups` de un rol existente, utilice el endpoint PUT
+personalizado:
+
+```bash
+curl -s -X PUT \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  -d '{
+    "name": "example-cert-admin",
+    "namespace": "system",
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read"
+    ]
+  }'
+```
+
+Este ejemplo reduce el rol a acceso de solo lectura eliminando
+`ves-io-proxy-write`.
+
+## Paso 5: Eliminar el Rol (Opcional)
+
+La eliminación utiliza el endpoint estándar de roles:
+
+```bash
+curl -s -X DELETE \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/system/roles/example-cert-admin"
+```
+
+## Referencia de API
+
+### Endpoints de Roles (Personalizados — incluyen `api_groups`)
+
+Los roles siempre están en el namespace `system`.
+
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| POST | `/api/web/custom/namespaces/system/roles` | Crear un rol personalizado |
+| GET | `/api/web/custom/namespaces/system/roles` | Listar roles personalizados |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | Obtener un rol personalizado |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | Reemplazar un rol personalizado |
+
+### Endpoints de Roles (Estándar)
+
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | Eliminar un rol |
+| GET | `/api/web/namespaces/system/roles/{name}` | Obtener un rol |
+| GET | `/api/web/namespaces/system/roles` | Listar roles |
+
+### Endpoints de Descubrimiento (Solo Lectura)
+
+El descubrimiento utiliza el namespace `shared`.
+
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| GET | `/api/web/namespaces/shared/api_groups` | Listar todos los api_groups |
+| GET | `/api/web/namespaces/shared/api_group_elements` | Listar todos los api_group_elements |
+
+### Endpoints de Certificados (A lo que el Rol Otorga Acceso)
+
+Reemplace `{namespace}` con el namespace donde se gestionan sus certificados.
+
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| POST | `/api/config/namespaces/{namespace}/certificates` | Crear un certificado |
+| GET | `/api/config/namespaces/{namespace}/certificates` | Listar certificados |
+| GET | `/api/config/namespaces/{namespace}/certificates/{name}` | Obtener un certificado |
+| PUT | `/api/config/namespaces/{namespace}/certificates/{name}` | Reemplazar un certificado |
+| DELETE | `/api/config/namespaces/{namespace}/certificates/{name}` | Eliminar un certificado |
+| POST | `/api/config/namespaces/{namespace}/certificate_chains` | Crear una cadena de certificados |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains` | Listar cadenas de certificados |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | Obtener una cadena de certificados |
+| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | Reemplazar una cadena de certificados |
+| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | Eliminar una cadena de certificados |
+
+## Por qué `api_group` y `api_group_element` son de Solo Lectura
+
+Estos objetos están **definidos por el sistema** por F5 XC. La plataforma pre-crea
+entradas de `api_group_element` para cada ruta de API y las agrupa en
+objetos `api_group` organizados por área funcional.
+
+No necesita crear estos — ya existen para cada recurso en el
+sistema. Su tarea es **descubrir** los nombres de grupo relevantes (Paso 1) y
+**referenciarlos** en su rol personalizado (Paso 2).
+
+Para ver qué rutas de API individuales cubre un api_group, liste el
+endpoint `api_group_elements` y busque elementos relacionados con su recurso:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_group_elements" \
+  | jq '[.items[] | select(.name | test("ves-io-schema-certificate")) | .name]'
+```

@@ -1,0 +1,234 @@
+---
+title: 인증서 관리 역할 - API
+description: API를 통해 SSL/TLS 인증서 관리로 사용자를 제한하는 커스텀 역할 생성
+sidebar:
+  label: 커스텀 역할 - API
+i18n:
+  sourceHash: a4031b2a23ae
+  translator: machine
+---
+
+이 가이드는 F5 Distributed Cloud에서 HTTP 로드 밸런서에서 사용하는 SSL/TLS 인증서 및 인증서 체인을 관리할 수 있는 권한을 부여하는 커스텀 RBAC 역할을 생성하는 과정을 안내합니다. UI 기반 접근 방식은 [간소화된 콘솔 가이드](./custom-role-ui)를 참조하십시오.
+
+## F5 XC RBAC 작동 방식
+
+F5 XC는 3단계 권한 모델을 사용합니다:
+
+```
+api_group_element  (읽기 전용, 시스템 정의)
+       │
+       ▼
+   api_group       (읽기 전용, 시스템 정의)
+       │
+       ▼
+     role           (전체 CRUD — 사용자가 생성하는 항목)
+```
+
+1. **`api_group_element`** — 정규식 경로와 HTTP 메서드를 정의합니다
+   (예: `POST /api/config/.*/certificates`). 시스템 관리 항목으로, 생성, 수정 또는 삭제할 수 없습니다.
+
+2. **`api_group`** — 기능 영역별로 구성된 `api_group_element` 참조의 명명된 컬렉션입니다. 시스템 관리 항목으로, 생성, 수정 또는 삭제할 수 없습니다. 그룹은 `ves-io-proxy-read` 또는 `f5xc-waap-standard-admin`과 같은 명명 규칙을 사용합니다.
+
+3. **`role`** — 배열에서 `api_group` 이름을 참조합니다. **사용자가 생성하는 유일한 단계입니다.** 커스텀 역할 엔드포인트를 사용하여 특정 `api_groups`를 역할에 연결합니다.
+
+HTTP 로드 밸런서의 인증서 작업은 다른 프록시 관련 리소스(HTTP 로드 밸런서, 라우트, 오리진 등)와 함께 `ves-io-proxy-*` api_groups에 번들로 포함됩니다. 인증서 전용 독립 api_groups는 없으며, 플랫폼은 개별 리소스 유형이 아닌 기능 영역별로 권한을 구성합니다.
+
+## 범위 및 제한 사항
+
+`ves-io-proxy-read` 및 `ves-io-proxy-write` api_groups는 인증서뿐만 아니라 **모든 프록시 관련 리소스**에 대한 접근 권한을 부여합니다. 이 역할이 할당된 사용자는 HTTP 로드 밸런서, 오리진, 라우트 및 기타 프록시 범위 객체도 관리할 수 있습니다.
+
+인증서 전용 RBAC는 F5 XC에서 불가능합니다. `api_group`과 `api_group_element`는 모두 시스템 정의 읽기 전용 객체이며, API는 이러한 항목에 대해 GET 엔드포인트만 제공합니다. 역할은 기존 `api_group` 이름만 참조할 수 있으며, 인증서에만 독점적으로 범위가 지정된 `api_group`은 존재하지 않습니다.
+
+**완화 방법 — 네임스페이스 격리:** 인증서 리소스를 위한 전용 네임스페이스를 생성하고 해당 네임스페이스에만 범위가 지정된 `example-cert-admin` 역할을 할당합니다. 사용자는 프록시 수준 권한을 유지하지만 다른 네임스페이스의 리소스에 접근할 수 없어, 더 넓은 api_group 범위의 영향 범위를 제한합니다.
+
+## 사전 요구 사항
+
+- 관리자 권한이 있는 F5 XC API 토큰
+- `curl` 및 `jq` 설치
+
+환경 변수를 설정합니다:
+
+```bash
+export F5XC_TENANT="your-tenant"
+export F5XC_API_URL="https://${F5XC_TENANT}.console.ves.volterra.io"
+export F5XC_API_TOKEN="your-api-token"
+```
+
+## 1단계: 프록시 API 그룹 검색
+
+시스템 정의 `api_group` 객체를 모두 나열하고 인증서 권한이 포함된 프록시 관련 항목을 필터링합니다:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_groups" \
+  | jq '[.items[] | select(.name | test("ves-io-proxy")) | .name] | sort'
+```
+
+예상 출력:
+
+```json
+[
+  "ves-io-proxy-app-firewall-read",
+  "ves-io-proxy-app-firewall-write",
+  "ves-io-proxy-monitor-read",
+  "ves-io-proxy-monitor-write",
+  "ves-io-proxy-read",
+  "ves-io-proxy-security-read",
+  "ves-io-proxy-security-write",
+  "ves-io-proxy-waf-read",
+  "ves-io-proxy-waf-write",
+  "ves-io-proxy-write"
+]
+```
+
+인증서 관리에 관련된 그룹은 다음과 같습니다:
+
+| API 그룹 | 부여 권한 |
+| --------- | ------ |
+| `ves-io-proxy-read` | 인증서를 포함한 프록시 리소스에 대한 읽기 접근 |
+| `ves-io-proxy-write` | 인증서를 포함한 프록시 리소스에 대한 쓰기 접근 |
+
+:::note
+이러한 그룹은 인증서뿐만 아니라 모든 프록시 관련 리소스(HTTP 로드 밸런서, 오리진, 라우트, 인증서, 인증서 체인 등)를 포함합니다. F5 XC는 기능 영역별로 권한을 구성합니다. 그룹이 부여하는 특정 API 경로를 확인해야 하는 경우, API 참조 섹션에 설명된 `api_group_elements` 엔드포인트를 확인하십시오.
+:::
+
+## 2단계: 커스텀 역할 생성
+
+커스텀 역할 생성 엔드포인트를 사용합니다. `api_groups` 배열은 1단계에서 검색한 시스템 정의 api_group 이름을 참조합니다.
+
+프록시 리소스(인증서 및 인증서 체인 포함)에 대한 읽기 및 쓰기 접근 권한을 가진 커스텀 역할을 생성합니다:
+
+```bash
+curl -s -X POST \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles" \
+  -d '{
+    "metadata": {
+      "name": "example-cert-admin",
+      "namespace": "system"
+    },
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read",
+      "ves-io-proxy-write"
+    ]
+  }'
+```
+
+## 3단계: 역할 확인
+
+커스텀 GET 엔드포인트를 사용하여 역할을 조회하고 `api_groups`가 연결되었는지 확인합니다:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  | jq '{name: .object.metadata.name, api_groups: .api_groups}'
+```
+
+예상 출력:
+
+```json
+{
+  "name": "example-cert-admin",
+  "api_groups": [
+    "ves-io-proxy-read",
+    "ves-io-proxy-write"
+  ]
+}
+```
+
+## 4단계: 역할 업데이트 (선택 사항)
+
+기존 역할에서 `api_groups`를 추가하거나 제거하려면 커스텀 PUT 엔드포인트를 사용합니다:
+
+```bash
+curl -s -X PUT \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  -d '{
+    "name": "example-cert-admin",
+    "namespace": "system",
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read"
+    ]
+  }'
+```
+
+이 예제는 `ves-io-proxy-write`를 제거하여 역할을 읽기 전용 접근으로 다운그레이드합니다.
+
+## 5단계: 역할 삭제 (선택 사항)
+
+삭제는 표준 역할 엔드포인트를 사용합니다:
+
+```bash
+curl -s -X DELETE \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/system/roles/example-cert-admin"
+```
+
+## API 참조
+
+### 역할 엔드포인트 (커스텀 — `api_groups` 포함)
+
+역할은 항상 `system` 네임스페이스에 있습니다.
+
+| 메서드 | 경로 | 설명 |
+| ------ | ---- | ----------- |
+| POST | `/api/web/custom/namespaces/system/roles` | 커스텀 역할 생성 |
+| GET | `/api/web/custom/namespaces/system/roles` | 커스텀 역할 목록 조회 |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | 커스텀 역할 조회 |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | 커스텀 역할 교체 |
+
+### 역할 엔드포인트 (표준)
+
+| 메서드 | 경로 | 설명 |
+| ------ | ---- | ----------- |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | 역할 삭제 |
+| GET | `/api/web/namespaces/system/roles/{name}` | 역할 조회 |
+| GET | `/api/web/namespaces/system/roles` | 역할 목록 조회 |
+
+### 검색 엔드포인트 (읽기 전용)
+
+검색은 `shared` 네임스페이스를 사용합니다.
+
+| 메서드 | 경로 | 설명 |
+| ------ | ---- | ----------- |
+| GET | `/api/web/namespaces/shared/api_groups` | 모든 api_groups 목록 조회 |
+| GET | `/api/web/namespaces/shared/api_group_elements` | 모든 api_group_elements 목록 조회 |
+
+### 인증서 엔드포인트 (역할이 접근 권한을 부여하는 대상)
+
+`{namespace}`를 인증서가 관리되는 네임스페이스로 교체하십시오.
+
+| 메서드 | 경로 | 설명 |
+| ------ | ---- | ----------- |
+| POST | `/api/config/namespaces/{namespace}/certificates` | 인증서 생성 |
+| GET | `/api/config/namespaces/{namespace}/certificates` | 인증서 목록 조회 |
+| GET | `/api/config/namespaces/{namespace}/certificates/{name}` | 인증서 조회 |
+| PUT | `/api/config/namespaces/{namespace}/certificates/{name}` | 인증서 교체 |
+| DELETE | `/api/config/namespaces/{namespace}/certificates/{name}` | 인증서 삭제 |
+| POST | `/api/config/namespaces/{namespace}/certificate_chains` | 인증서 체인 생성 |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains` | 인증서 체인 목록 조회 |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 인증서 체인 조회 |
+| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 인증서 체인 교체 |
+| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 인증서 체인 삭제 |
+
+## `api_group` 및 `api_group_element`가 읽기 전용인 이유
+
+이러한 객체는 F5 XC에 의해 **시스템 정의**됩니다. 플랫폼은 모든 API 경로에 대해 `api_group_element` 항목을 사전 생성하고 기능 영역별로 구성된 `api_group` 객체로 그룹화합니다.
+
+이러한 항목을 생성할 필요가 없습니다 — 시스템의 모든 리소스에 대해 이미 존재합니다. 사용자의 역할은 관련 그룹 이름을 **검색**하고(1단계) 커스텀 역할에서 이를 **참조**하는 것입니다(2단계).
+
+api_group이 포함하는 개별 API 경로를 확인하려면 `api_group_elements` 엔드포인트를 나열하고 리소스와 관련된 요소를 찾으십시오:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_group_elements" \
+  | jq '[.items[] | select(.name | test("ves-io-schema-certificate")) | .name]'
+```

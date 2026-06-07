@@ -1,0 +1,255 @@
+---
+title: 证书管理员角色 - API
+description: 通过 API 创建自定义角色，将用户限制为 SSL/TLS 证书管理
+sidebar:
+  label: 自定义角色 - API
+i18n:
+  sourceHash: a4031b2a23ae
+  translator: machine
+---
+
+本指南将逐步介绍如何在 F5 Distributed Cloud 中创建自定义 RBAC 角色，
+该角色授予管理 HTTP 负载均衡器所使用的 SSL/TLS 证书和证书链的权限。如需基于 UI 的方法，请参阅
+[简化控制台指南](./custom-role-ui)。
+
+## F5 XC RBAC 工作原理
+
+F5 XC 使用三层权限模型：
+
+```
+api_group_element  (只读，系统定义)
+       │
+       ▼
+   api_group       (只读，系统定义)
+       │
+       ▼
+     role           (完整 CRUD — 这是您创建的对象)
+```
+
+1. **`api_group_element`** — 定义正则表达式路径和 HTTP 方法
+   （例如 `POST /api/config/.*/certificates`）。由系统管理；您无法
+   创建、修改或删除这些对象。
+
+2. **`api_group`** — 按功能区域组织的 `api_group_element` 引用的命名集合。由系统管理；您无法创建、修改或
+   删除这些对象。组使用诸如 `ves-io-proxy-read` 或
+   `f5xc-waap-standard-admin` 之类的命名约定。
+
+3. **`role`** — 在数组中引用 `api_group` 名称。**这是您唯一需要创建的层级。** 使用自定义角色端点将特定的
+   `api_groups` 附加到角色。
+
+HTTP 负载均衡器的证书操作与其他代理相关资源（HTTP 负载均衡器、路由、源站等）一起捆绑在
+`ves-io-proxy-*` api_groups 中。没有独立的仅证书
+api_groups — 平台按功能区域而非单个资源类型组织权限。
+
+## 范围和限制
+
+`ves-io-proxy-read` 和 `ves-io-proxy-write` api_groups 授予对
+**所有代理相关资源**的访问权限，而不仅仅是证书。被分配此角色的用户还可以管理 HTTP 负载均衡器、源站、路由和其他
+代理范围内的对象。
+
+在 F5 XC 上无法实现仅证书的 RBAC。`api_group` 和
+`api_group_element` 都是系统定义的只读对象 — API 仅为这些对象公开 GET 端点。角色只能引用现有的 `api_group`
+名称，且没有专门限定于证书的 `api_group`。
+
+**缓解措施 — 命名空间隔离：** 为证书资源创建一个专用命名空间，并将 `example-cert-admin` 角色仅分配到该命名空间范围内。用户保留代理级别的权限，但无法访问其他命名空间中的资源，从而限制了更广泛 api_group 范围的影响范围。
+
+## 前提条件
+
+- 具有管理员权限的 F5 XC API 令牌
+- 已安装 `curl` 和 `jq`
+
+设置环境变量：
+
+```bash
+export F5XC_TENANT="your-tenant"
+export F5XC_API_URL="https://${F5XC_TENANT}.console.ves.volterra.io"
+export F5XC_API_TOKEN="your-api-token"
+```
+
+## 步骤 1：发现代理 API 组
+
+列出所有系统定义的 `api_group` 对象，并筛选与代理相关的
+条目（包含证书权限）：
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_groups" \
+  | jq '[.items[] | select(.name | test("ves-io-proxy")) | .name] | sort'
+```
+
+预期输出：
+
+```json
+[
+  "ves-io-proxy-app-firewall-read",
+  "ves-io-proxy-app-firewall-write",
+  "ves-io-proxy-monitor-read",
+  "ves-io-proxy-monitor-write",
+  "ves-io-proxy-read",
+  "ves-io-proxy-security-read",
+  "ves-io-proxy-security-write",
+  "ves-io-proxy-waf-read",
+  "ves-io-proxy-waf-write",
+  "ves-io-proxy-write"
+]
+```
+
+对于证书管理，相关的组为：
+
+| API 组 | 授予的权限 |
+| --------- | ------ |
+| `ves-io-proxy-read` | 对代理资源（包括证书）的读取访问权限 |
+| `ves-io-proxy-write` | 对代理资源（包括证书）的写入访问权限 |
+
+:::note
+这些组涵盖所有代理相关资源（HTTP 负载均衡器、源站、路由、证书、证书链等），而不仅仅是证书。F5 XC
+按功能区域组织权限。如果您需要验证某个组授予了哪些特定的
+API 路径，请查看 API 参考部分中描述的 `api_group_elements` 端点。
+:::
+
+## 步骤 2：创建自定义角色
+
+使用自定义角色创建端点。`api_groups` 数组引用在步骤 1 中发现的
+系统定义的 api_group 名称。
+
+创建具有代理资源（包括证书和证书链）读写访问权限的自定义角色：
+
+```bash
+curl -s -X POST \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles" \
+  -d '{
+    "metadata": {
+      "name": "example-cert-admin",
+      "namespace": "system"
+    },
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read",
+      "ves-io-proxy-write"
+    ]
+  }'
+```
+
+## 步骤 3：验证角色
+
+使用自定义 GET 端点检索角色，以确认 `api_groups`
+已附加：
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  | jq '{name: .object.metadata.name, api_groups: .api_groups}'
+```
+
+预期输出：
+
+```json
+{
+  "name": "example-cert-admin",
+  "api_groups": [
+    "ves-io-proxy-read",
+    "ves-io-proxy-write"
+  ]
+}
+```
+
+## 步骤 4：更新角色（可选）
+
+要从现有角色中添加或移除 `api_groups`，请使用自定义 PUT
+端点：
+
+```bash
+curl -s -X PUT \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  -d '{
+    "name": "example-cert-admin",
+    "namespace": "system",
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read"
+    ]
+  }'
+```
+
+此示例通过移除 `ves-io-proxy-write` 将角色降级为只读访问权限。
+
+## 步骤 5：删除角色（可选）
+
+删除使用标准角色端点：
+
+```bash
+curl -s -X DELETE \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/system/roles/example-cert-admin"
+```
+
+## API 参考
+
+### 角色端点（自定义 — 包含 `api_groups`）
+
+角色始终位于 `system` 命名空间中。
+
+| 方法 | 路径 | 描述 |
+| ------ | ---- | ----------- |
+| POST | `/api/web/custom/namespaces/system/roles` | 创建自定义角色 |
+| GET | `/api/web/custom/namespaces/system/roles` | 列出自定义角色 |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | 获取自定义角色 |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | 替换自定义角色 |
+
+### 角色端点（标准）
+
+| 方法 | 路径 | 描述 |
+| ------ | ---- | ----------- |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | 删除角色 |
+| GET | `/api/web/namespaces/system/roles/{name}` | 获取角色 |
+| GET | `/api/web/namespaces/system/roles` | 列出角色 |
+
+### 发现端点（只读）
+
+发现使用 `shared` 命名空间。
+
+| 方法 | 路径 | 描述 |
+| ------ | ---- | ----------- |
+| GET | `/api/web/namespaces/shared/api_groups` | 列出所有 api_groups |
+| GET | `/api/web/namespaces/shared/api_group_elements` | 列出所有 api_group_elements |
+
+### 证书端点（角色授予访问权限的内容）
+
+将 `{namespace}` 替换为管理证书的命名空间。
+
+| 方法 | 路径 | 描述 |
+| ------ | ---- | ----------- |
+| POST | `/api/config/namespaces/{namespace}/certificates` | 创建证书 |
+| GET | `/api/config/namespaces/{namespace}/certificates` | 列出证书 |
+| GET | `/api/config/namespaces/{namespace}/certificates/{name}` | 获取证书 |
+| PUT | `/api/config/namespaces/{namespace}/certificates/{name}` | 替换证书 |
+| DELETE | `/api/config/namespaces/{namespace}/certificates/{name}` | 删除证书 |
+| POST | `/api/config/namespaces/{namespace}/certificate_chains` | 创建证书链 |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains` | 列出证书链 |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 获取证书链 |
+| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 替换证书链 |
+| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 删除证书链 |
+
+## 为什么 `api_group` 和 `api_group_element` 是只读的
+
+这些对象是 F5 XC **系统定义**的。平台为每个 API 路径预创建
+`api_group_element` 条目，并将它们按功能区域分组到
+`api_group` 对象中。
+
+您不需要创建这些对象 — 它们已经为系统中的每个资源预先存在。您的任务是**发现**相关的组名称（步骤 1）并在自定义角色中**引用**它们（步骤 2）。
+
+要查看某个 api_group 涵盖了哪些具体的 API 路径，请列出
+`api_group_elements` 端点并查找与您的资源相关的元素：
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_group_elements" \
+  | jq '[.items[] | select(.name | test("ves-io-schema-certificate")) | .name]'
+```

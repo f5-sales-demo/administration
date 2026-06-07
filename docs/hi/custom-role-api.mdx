@@ -1,0 +1,274 @@
+---
+title: Certificate Admin Role - API
+description: >-
+  Create a custom role restricting users to SSL/TLS certificate management via
+  API
+sidebar:
+  label: Custom Role - API
+i18n:
+  sourceHash: a4031b2a23ae
+  translator: machine
+---
+
+यह गाइड F5 Distributed Cloud में एक कस्टम RBAC रोल बनाने की प्रक्रिया बताती है
+जो HTTP Load Balancers द्वारा उपयोग किए जाने वाले SSL/TLS प्रमाणपत्रों और प्रमाणपत्र श्रृंखलाओं
+को प्रबंधित करने की अनुमति प्रदान करता है। UI-आधारित दृष्टिकोण के लिए,
+[सरलीकृत कंसोल गाइड](./custom-role-ui) देखें।
+
+## F5 XC RBAC कैसे काम करता है
+
+F5 XC तीन-स्तरीय अनुमति मॉडल का उपयोग करता है:
+
+```
+api_group_element  (read-only, system-defined)
+       │
+       ▼
+   api_group       (read-only, system-defined)
+       │
+       ▼
+     role           (full CRUD — यही वह है जो आप बनाते हैं)
+```
+
+1. **`api_group_element`** — एक regex पथ और HTTP मेथड्स को परिभाषित करता है
+   (जैसे, `POST /api/config/.*/certificates`)। सिस्टम-प्रबंधित; आप इन्हें
+   बना, संशोधित, या हटा नहीं सकते।
+
+2. **`api_group`** — `api_group_element` संदर्भों का एक नामित संग्रह,
+   कार्यात्मक क्षेत्र के अनुसार व्यवस्थित। सिस्टम-प्रबंधित; आप इन्हें बना, संशोधित, या
+   हटा नहीं सकते। समूह `ves-io-proxy-read` या
+   `f5xc-waap-standard-admin` जैसी नामकरण परंपराओं का उपयोग करते हैं।
+
+3. **`role`** — एक array में `api_group` नामों को संदर्भित करता है। **यह एकमात्र
+   स्तर है जो आप बनाते हैं।** विशिष्ट `api_groups` को एक रोल से जोड़ने के लिए
+   कस्टम रोल एंडपॉइंट्स का उपयोग करें।
+
+HTTP Load Balancers के लिए प्रमाणपत्र संचालन अन्य प्रॉक्सी-संबंधित संसाधनों (HTTP Load
+Balancers, routes, origins, आदि) के साथ `ves-io-proxy-*` api_groups में बंडल किए गए हैं।
+कोई स्वतंत्र केवल-प्रमाणपत्र api_groups नहीं हैं — प्लेटफ़ॉर्म अनुमतियों को व्यक्तिगत
+संसाधन प्रकार के बजाय कार्यात्मक क्षेत्र के अनुसार व्यवस्थित करता है।
+
+## दायरा और सीमाएँ
+
+`ves-io-proxy-read` और `ves-io-proxy-write` api_groups **सभी प्रॉक्सी-संबंधित
+संसाधनों** तक पहुँच प्रदान करते हैं, केवल प्रमाणपत्रों तक नहीं। इस रोल को
+सौंपा गया उपयोगकर्ता HTTP Load Balancers, origins, routes, और अन्य
+प्रॉक्सी-स्कोप्ड ऑब्जेक्ट्स को भी प्रबंधित कर सकता है।
+
+F5 XC पर केवल-प्रमाणपत्र RBAC संभव नहीं है। `api_group` और
+`api_group_element` दोनों सिस्टम-परिभाषित, केवल-पठन ऑब्जेक्ट्स हैं — API इनके
+लिए केवल GET एंडपॉइंट्स उजागर करता है। रोल केवल मौजूदा `api_group`
+नामों को संदर्भित कर सकते हैं, और कोई `api_group` विशेष रूप से प्रमाणपत्रों तक
+सीमित नहीं है।
+
+**शमन — namespace पृथक्करण:** प्रमाणपत्र संसाधनों के लिए एक समर्पित namespace
+बनाएँ और `example-cert-admin` रोल को केवल उस namespace तक सीमित करें। उपयोगकर्ता
+प्रॉक्सी-स्तरीय अनुमतियाँ बनाए रखता है लेकिन अन्य namespaces में संसाधनों तक
+नहीं पहुँच सकता, जिससे व्यापक api_group दायरे का प्रभाव क्षेत्र सीमित हो जाता है।
+
+## पूर्वापेक्षाएँ
+
+- व्यवस्थापक विशेषाधिकारों वाला एक F5 XC API टोकन
+- `curl` और `jq` स्थापित
+
+अपने परिवेश चर सेट करें:
+
+```bash
+export F5XC_TENANT="your-tenant"
+export F5XC_API_URL="https://${F5XC_TENANT}.console.ves.volterra.io"
+export F5XC_API_TOKEN="your-api-token"
+```
+
+## चरण 1: प्रॉक्सी API Groups की खोज करें
+
+सभी सिस्टम-परिभाषित `api_group` ऑब्जेक्ट्स को सूचीबद्ध करें और प्रॉक्सी-संबंधित
+प्रविष्टियों (जिनमें प्रमाणपत्र अनुमतियाँ शामिल हैं) के लिए फ़िल्टर करें:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_groups" \
+  | jq '[.items[] | select(.name | test("ves-io-proxy")) | .name] | sort'
+```
+
+अपेक्षित आउटपुट:
+
+```json
+[
+  "ves-io-proxy-app-firewall-read",
+  "ves-io-proxy-app-firewall-write",
+  "ves-io-proxy-monitor-read",
+  "ves-io-proxy-monitor-write",
+  "ves-io-proxy-read",
+  "ves-io-proxy-security-read",
+  "ves-io-proxy-security-write",
+  "ves-io-proxy-waf-read",
+  "ves-io-proxy-waf-write",
+  "ves-io-proxy-write"
+]
+```
+
+प्रमाणपत्र प्रबंधन के लिए, प्रासंगिक समूह हैं:
+
+| API Group | प्रदान करता है |
+| --------- | ------ |
+| `ves-io-proxy-read` | प्रमाणपत्रों सहित प्रॉक्सी संसाधनों तक पठन पहुँच |
+| `ves-io-proxy-write` | प्रमाणपत्रों सहित प्रॉक्सी संसाधनों तक लेखन पहुँच |
+
+:::note
+ये समूह सभी प्रॉक्सी-संबंधित संसाधनों (HTTP Load Balancers, origins,
+routes, प्रमाणपत्र, प्रमाणपत्र श्रृंखलाएँ, आदि) को कवर करते हैं, केवल प्रमाणपत्रों को नहीं। F5 XC
+अनुमतियों को कार्यात्मक क्षेत्र के अनुसार व्यवस्थित करता है। यदि आपको यह सत्यापित करने की
+आवश्यकता है कि कोई समूह कौन से विशिष्ट API पथ प्रदान करता है, तो API संदर्भ अनुभाग में
+वर्णित `api_group_elements` एंडपॉइंट देखें।
+:::
+
+## चरण 2: कस्टम रोल बनाएँ
+
+कस्टम रोल निर्माण एंडपॉइंट का उपयोग करें। `api_groups` array चरण 1 में
+खोजे गए सिस्टम-परिभाषित api_group नामों को संदर्भित करता है।
+
+प्रॉक्सी संसाधनों (प्रमाणपत्रों और प्रमाणपत्र श्रृंखलाओं सहित) तक पठन और लेखन
+पहुँच के साथ कस्टम रोल बनाएँ:
+
+```bash
+curl -s -X POST \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles" \
+  -d '{
+    "metadata": {
+      "name": "example-cert-admin",
+      "namespace": "system"
+    },
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read",
+      "ves-io-proxy-write"
+    ]
+  }'
+```
+
+## चरण 3: रोल को सत्यापित करें
+
+यह पुष्टि करने के लिए कि `api_groups` जुड़े हुए हैं, कस्टम GET एंडपॉइंट
+का उपयोग करके रोल प्राप्त करें:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  | jq '{name: .object.metadata.name, api_groups: .api_groups}'
+```
+
+अपेक्षित आउटपुट:
+
+```json
+{
+  "name": "example-cert-admin",
+  "api_groups": [
+    "ves-io-proxy-read",
+    "ves-io-proxy-write"
+  ]
+}
+```
+
+## चरण 4: रोल को अपडेट करें (वैकल्पिक)
+
+किसी मौजूदा रोल से `api_groups` जोड़ने या हटाने के लिए, कस्टम PUT
+एंडपॉइंट का उपयोग करें:
+
+```bash
+curl -s -X PUT \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  -d '{
+    "name": "example-cert-admin",
+    "namespace": "system",
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read"
+    ]
+  }'
+```
+
+यह उदाहरण `ves-io-proxy-write` को हटाकर रोल को केवल-पठन पहुँच तक
+डाउनग्रेड करता है।
+
+## चरण 5: रोल को हटाएँ (वैकल्पिक)
+
+हटाने के लिए मानक रोल एंडपॉइंट का उपयोग किया जाता है:
+
+```bash
+curl -s -X DELETE \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/system/roles/example-cert-admin"
+```
+
+## API संदर्भ
+
+### रोल एंडपॉइंट्स (कस्टम — `api_groups` सहित)
+
+रोल हमेशा `system` namespace में होते हैं।
+
+| मेथड | पथ | विवरण |
+| ------ | ---- | ----------- |
+| POST | `/api/web/custom/namespaces/system/roles` | कस्टम रोल बनाएँ |
+| GET | `/api/web/custom/namespaces/system/roles` | कस्टम रोल सूचीबद्ध करें |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | कस्टम रोल प्राप्त करें |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | कस्टम रोल को बदलें |
+
+### रोल एंडपॉइंट्स (मानक)
+
+| मेथड | पथ | विवरण |
+| ------ | ---- | ----------- |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | रोल हटाएँ |
+| GET | `/api/web/namespaces/system/roles/{name}` | रोल प्राप्त करें |
+| GET | `/api/web/namespaces/system/roles` | रोल सूचीबद्ध करें |
+
+### खोज एंडपॉइंट्स (केवल-पठन)
+
+खोज `shared` namespace का उपयोग करती है।
+
+| मेथड | पथ | विवरण |
+| ------ | ---- | ----------- |
+| GET | `/api/web/namespaces/shared/api_groups` | सभी api_groups सूचीबद्ध करें |
+| GET | `/api/web/namespaces/shared/api_group_elements` | सभी api_group_elements सूचीबद्ध करें |
+
+### प्रमाणपत्र एंडपॉइंट्स (रोल जिन तक पहुँच प्रदान करता है)
+
+`{namespace}` को उस namespace से बदलें जहाँ आपके प्रमाणपत्र प्रबंधित होते हैं।
+
+| मेथड | पथ | विवरण |
+| ------ | ---- | ----------- |
+| POST | `/api/config/namespaces/{namespace}/certificates` | प्रमाणपत्र बनाएँ |
+| GET | `/api/config/namespaces/{namespace}/certificates` | प्रमाणपत्र सूचीबद्ध करें |
+| GET | `/api/config/namespaces/{namespace}/certificates/{name}` | प्रमाणपत्र प्राप्त करें |
+| PUT | `/api/config/namespaces/{namespace}/certificates/{name}` | प्रमाणपत्र बदलें |
+| DELETE | `/api/config/namespaces/{namespace}/certificates/{name}` | प्रमाणपत्र हटाएँ |
+| POST | `/api/config/namespaces/{namespace}/certificate_chains` | प्रमाणपत्र श्रृंखला बनाएँ |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains` | प्रमाणपत्र श्रृंखलाएँ सूचीबद्ध करें |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | प्रमाणपत्र श्रृंखला प्राप्त करें |
+| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | प्रमाणपत्र श्रृंखला बदलें |
+| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | प्रमाणपत्र श्रृंखला हटाएँ |
+
+## `api_group` और `api_group_element` केवल-पठन क्यों हैं
+
+ये ऑब्जेक्ट्स F5 XC द्वारा **सिस्टम-परिभाषित** हैं। प्लेटफ़ॉर्म प्रत्येक API पथ के
+लिए `api_group_element` प्रविष्टियाँ पूर्व-निर्मित करता है और उन्हें कार्यात्मक
+क्षेत्र के अनुसार व्यवस्थित `api_group` ऑब्जेक्ट्स में समूहित करता है।
+
+आपको इन्हें बनाने की आवश्यकता नहीं है — ये सिस्टम में प्रत्येक संसाधन के लिए
+पहले से मौजूद हैं। आपका कार्य प्रासंगिक समूह नामों को **खोजना** (चरण 1) और
+अपने कस्टम रोल में उन्हें **संदर्भित** करना (चरण 2) है।
+
+यह देखने के लिए कि एक api_group कौन से व्यक्तिगत API पथ कवर करता है,
+`api_group_elements` एंडपॉइंट सूचीबद्ध करें और अपने संसाधन से संबंधित तत्वों
+की तलाश करें:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_group_elements" \
+  | jq '[.items[] | select(.name | test("ves-io-schema-certificate")) | .name]'
+```

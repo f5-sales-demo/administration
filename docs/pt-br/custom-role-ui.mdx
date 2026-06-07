@@ -1,0 +1,106 @@
+---
+title: Função de Administrador de Certificados - UI
+description: >-
+  Crie uma função personalizada restringindo usuários ao gerenciamento de
+  certificados SSL/TLS via console UI do F5 XC
+sidebar:
+  label: Função Personalizada - UI
+i18n:
+  sourceHash: d115af97c1da
+  translator: machine
+---
+
+Este guia orienta a criação de uma função RBAC personalizada usando a UI do Console F5 Distributed Cloud. A função concede acesso para gerenciar certificados SSL/TLS e cadeias de certificados usados por HTTP Load Balancers. Para a abordagem programática (API), consulte o [guia de API](./custom-role-api).
+
+## Como o RBAC do F5 XC Funciona
+
+O F5 XC usa um modelo de permissões de três camadas:
+
+```
+api_group_element  (somente leitura, definido pelo sistema)
+       │
+       ▼
+   api_group       (somente leitura, definido pelo sistema)
+       │
+       ▼
+     role           (CRUD completo — é o que você cria)
+```
+
+1. **`api_group_element`** — Define um caminho regex e métodos HTTP
+   (ex.: `POST /api/config/.*/certificates`). Gerenciado pelo sistema; você não pode
+   criar, modificar ou excluir esses elementos.
+
+2. **`api_group`** — Uma coleção nomeada de referências de `api_group_element`,
+   organizada por área funcional. Gerenciado pelo sistema; você não pode criar, modificar ou
+   excluir esses grupos. Os grupos usam convenções de nomenclatura como `ves-io-proxy-read` ou
+   `f5xc-waap-standard-admin`.
+
+3. **`role`** — Referencia nomes de `api_group` em um array. **Esta é a única
+   camada que você cria.** Use os endpoints de função personalizada para anexar
+   `api_groups` específicos a uma função.
+
+Ao selecionar os grupos de leitura/escrita de proxy, a função `example-cert-admin` concede gerenciamento de certificados SSL/TLS como parte de um acesso mais amplo a recursos de proxy.
+
+## Escopo e Limitações
+
+Selecionar os grupos de leitura/escrita de proxy concede acesso a **todos os recursos de proxy** no namespace atribuído — HTTP Load Balancers, origens, rotas e certificados igualmente. Não há como restringir a função apenas a certificados.
+
+O F5 XC não suporta objetos `api_group` ou `api_group_element` criados pelo usuário. A plataforma os predefine como somente leitura, e as funções só podem referenciar nomes de grupos existentes. Nenhum grupo definido pelo sistema é limitado exclusivamente a operações de certificados.
+
+**Mitigação — isolamento de namespace:** Coloque os recursos de certificados em um namespace dedicado e defina o escopo da função `example-cert-admin` para esse namespace. Isso impede que o usuário acesse recursos de proxy em outros namespaces, ao mesmo tempo em que concede gerenciamento completo de certificados dentro do namespace isolado.
+
+## Pré-requisitos
+
+- Acesso de administrador ao Console F5 Distributed Cloud
+
+## Etapa 1: Navegar até o Gerenciamento de Funções
+
+1. Faça login no Console F5 Distributed Cloud
+2. Clique no bloco **Administration** na página inicial
+3. No menu de navegação à esquerda, selecione **IAM** &gt; **Roles**
+4. Clique em **+ Add Role**
+
+## Etapa 2: Nomear a Função
+
+Insira `example-cert-admin` no campo **Role Name**.
+
+Regras de nomenclatura de funções:
+
+- Apenas letras minúsculas, números e hífens
+- Deve começar com duas letras minúsculas
+- Máximo de 64 caracteres
+
+## Etapa 3: Adicionar Grupos de API de Proxy
+
+As permissões de certificados fazem parte da área funcional de proxy. Adicione os seguintes grupos de API para conceder acesso ao gerenciamento de certificados:
+
+1. Clique em **+ Allowed API Groups**
+2. No campo de busca/filtro, digite `ves-io-proxy`
+3. Selecione os seguintes grupos de API:
+
+| Grupo de API | Concede |
+| --------- | ------ |
+| `ves-io-proxy-read` | Acesso de leitura a recursos de proxy, incluindo certificados |
+| `ves-io-proxy-write` | Acesso de escrita a recursos de proxy, incluindo certificados |
+
+4. Clique em **Save** para confirmar os grupos de API selecionados
+
+:::note
+Esses grupos abrangem todos os recursos relacionados a proxy (HTTP Load Balancers, origens, rotas, certificados, cadeias de certificados, etc.), não apenas certificados. O F5 XC organiza permissões por área funcional, não por tipo de recurso individual.
+:::
+
+## Etapa 4: Salvar a Função
+
+Revise os grupos de API selecionados no resumo e clique em **Save** para criar a função.
+
+## Etapa 5: Verificar a Função
+
+1. Navegue até **IAM** &gt; **Roles**
+2. Clique em **example-cert-admin** na lista de funções
+3. Confirme que ambos os grupos de API estão listados
+
+## Referências
+
+- [Gerenciar Funções — Documentação F5 XC](https://docs.cloud.f5.com/docs/how-to/user-mgmt/roles)
+- [Conceitos de RBAC — Documentação F5 XC](https://docs.cloud.f5.com/docs-v2/platform/concepts/rbac)
+- [Guia Programático (API)](./custom-role-api)
