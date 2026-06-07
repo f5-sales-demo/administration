@@ -1,0 +1,97 @@
+---
+title: 证书管理员角色 - UI
+description: 通过 F5 XC 控制台 UI 创建自定义角色，将用户限制为 SSL/TLS 证书管理
+sidebar:
+  label: 自定义角色 - UI
+i18n:
+  sourceHash: d115af97c1da
+  translator: machine
+---
+
+本指南将逐步介绍如何使用 F5 Distributed Cloud 控制台 UI 创建自定义 RBAC 角色。该角色授予管理 HTTP 负载均衡器所使用的 SSL/TLS 证书和证书链的权限。如需了解编程（API）方式，请参阅 [API 指南](./custom-role-api)。
+
+## F5 XC RBAC 工作原理
+
+F5 XC 使用三层权限模型：
+
+```
+api_group_element  (read-only, system-defined)
+       │
+       ▼
+   api_group       (read-only, system-defined)
+       │
+       ▼
+     role           (full CRUD — this is what you create)
+```
+
+1. **`api_group_element`** — 定义正则表达式路径和 HTTP 方法（例如 `POST /api/config/.*/certificates`）。由系统管理；您无法创建、修改或删除这些元素。
+
+2. **`api_group`** — `api_group_element` 引用的命名集合，按功能区域组织。由系统管理；您无法创建、修改或删除这些组。组使用类似 `ves-io-proxy-read` 或 `f5xc-waap-standard-admin` 的命名约定。
+
+3. **`role`** — 在数组中引用 `api_group` 名称。**这是您唯一需要创建的层级。** 使用自定义角色端点将特定的 `api_groups` 附加到角色。
+
+通过选择代理读/写组，`example-cert-admin` 角色将 SSL/TLS 证书管理作为更广泛的代理资源访问权限的一部分进行授予。
+
+## 范围和限制
+
+选择代理读/写组将授予对已分配命名空间中**所有代理资源**的访问权限——包括 HTTP 负载均衡器、源站、路由和证书。目前无法将角色限制为仅访问证书。
+
+F5 XC 不支持用户创建 `api_group` 或 `api_group_element` 对象。平台将这些预定义为只读，角色只能引用现有的组名称。没有任何系统定义的组专门限定于证书操作范围。
+
+**缓解措施——命名空间隔离：** 将证书资源放置在专用命名空间中，并将 `example-cert-admin` 角色的范围限定到该命名空间。这可以防止用户访问其他命名空间中的代理资源，同时仍然在隔离的命名空间内授予完整的证书管理权限。
+
+## 前提条件
+
+- 拥有 F5 Distributed Cloud 控制台的管理员访问权限
+
+## 步骤 1：导航到角色管理
+
+1. 登录 F5 Distributed Cloud 控制台
+2. 在主页上点击 **Administration** 磁贴
+3. 在左侧导航菜单中，选择 **IAM** &gt; **Roles**
+4. 点击 **+ Add Role**
+
+## 步骤 2：命名角色
+
+在 **Role Name** 字段中输入 `example-cert-admin`。
+
+角色命名规则：
+
+- 仅允许小写字母、数字和连字符
+- 必须以两个小写字母开头
+- 最多 64 个字符
+
+## 步骤 3：添加代理 API 组
+
+证书权限属于代理功能区域。添加以下 API 组以授予证书管理访问权限：
+
+1. 点击 **+ Allowed API Groups**
+2. 在搜索/过滤字段中，输入 `ves-io-proxy`
+3. 选择以下 API 组：
+
+| API 组 | 授予的权限 |
+| --------- | ------ |
+| `ves-io-proxy-read` | 对代理资源（包括证书）的读取权限 |
+| `ves-io-proxy-write` | 对代理资源（包括证书）的写入权限 |
+
+4. 点击 **Save** 以确认所选的 API 组
+
+:::note
+这些组涵盖所有与代理相关的资源（HTTP 负载均衡器、源站、路由、证书、证书链等），而不仅仅是证书。F5 XC 按功能区域组织权限，而非按单个资源类型。
+:::
+
+## 步骤 4：保存角色
+
+在摘要中检查所选的 API 组，然后点击 **Save** 以创建角色。
+
+## 步骤 5：验证角色
+
+1. 导航到 **IAM** &gt; **Roles**
+2. 在角色列表中点击 **example-cert-admin**
+3. 确认两个 API 组均已列出
+
+## 参考资料
+
+- [管理角色 — F5 XC 文档](https://docs.cloud.f5.com/docs/how-to/user-mgmt/roles)
+- [RBAC 概念 — F5 XC 文档](https://docs.cloud.f5.com/docs-v2/platform/concepts/rbac)
+- [编程指南 (API)](./custom-role-api)

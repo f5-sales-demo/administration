@@ -1,0 +1,233 @@
+---
+title: 証明書管理者ロール - API
+description: APIを使用してSSL/TLS証明書管理にユーザーを制限するカスタムロールを作成する
+sidebar:
+  label: カスタムロール - API
+i18n:
+  sourceHash: a4031b2a23ae
+  translator: machine
+---
+
+このガイドでは、F5 Distributed Cloudでカスタム RBACロールを作成し、HTTP Load Balancerで使用されるSSL/TLS証明書および証明書チェーンの管理権限を付与する方法を説明します。UIベースのアプローチについては、[簡易コンソールガイド](./custom-role-ui)を参照してください。
+
+## F5 XC RBACの仕組み
+
+F5 XCは3層の権限モデルを使用しています：
+
+```
+api_group_element  (読み取り専用、システム定義)
+       │
+       ▼
+   api_group       (読み取り専用、システム定義)
+       │
+       ▼
+     role           (完全なCRUD — ここが作成する対象)
+```
+
+1. **`api_group_element`** — 正規表現パスとHTTPメソッドを定義します（例：`POST /api/config/.*/certificates`）。システム管理のため、作成・変更・削除はできません。
+
+2. **`api_group`** — `api_group_element`参照の名前付きコレクションで、機能領域ごとに整理されています。システム管理のため、作成・変更・削除はできません。グループは`ves-io-proxy-read`や`f5xc-waap-standard-admin`のような命名規則を使用します。
+
+3. **`role`** — `api_group`名を配列で参照します。**これが唯一作成する階層です。** カスタムロールエンドポイントを使用して、特定の`api_groups`をロールに関連付けます。
+
+HTTP Load Balancerの証明書操作は、他のプロキシ関連リソース（HTTP Load Balancer、ルート、オリジンなど）とともに`ves-io-proxy-*` api_groupsにバンドルされています。証明書のみのスタンドアロンapi_groupsは存在しません — プラットフォームは個別のリソースタイプではなく、機能領域ごとに権限を整理しています。
+
+## スコープと制限事項
+
+`ves-io-proxy-read`および`ves-io-proxy-write` api_groupsは、証明書だけでなく、**すべてのプロキシ関連リソース**へのアクセスを付与します。このロールが割り当てられたユーザーは、HTTP Load Balancer、オリジン、ルート、およびその他のプロキシスコープオブジェクトも管理できます。
+
+F5 XCでは証明書のみのRBACは実現できません。`api_group`と`api_group_element`はどちらもシステム定義の読み取り専用オブジェクトであり、APIはこれらに対してGETエンドポイントのみを公開しています。ロールは既存の`api_group`名のみを参照でき、証明書のみにスコープされた`api_group`は存在しません。
+
+**緩和策 — ネームスペースの分離：** 証明書リソース専用のネームスペースを作成し、`example-cert-admin`ロールをそのネームスペースのみにスコープして割り当てます。ユーザーはプロキシレベルの権限を保持しますが、他のネームスペースのリソースにはアクセスできないため、より広いapi_groupスコープの影響範囲を制限できます。
+
+## 前提条件
+
+- 管理者権限を持つF5 XC APIトークン
+- `curl`および`jq`がインストールされていること
+
+環境変数を設定します：
+
+```bash
+export F5XC_TENANT="your-tenant"
+export F5XC_API_URL="https://${F5XC_TENANT}.console.ves.volterra.io"
+export F5XC_API_TOKEN="your-api-token"
+```
+
+## ステップ1：プロキシAPIグループの検出
+
+システム定義のすべての`api_group`オブジェクトを一覧表示し、プロキシ関連のエントリ（証明書権限を含む）でフィルタリングします：
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_groups" \
+  | jq '[.items[] | select(.name | test("ves-io-proxy")) | .name] | sort'
+```
+
+期待される出力：
+
+```json
+[
+  "ves-io-proxy-app-firewall-read",
+  "ves-io-proxy-app-firewall-write",
+  "ves-io-proxy-monitor-read",
+  "ves-io-proxy-monitor-write",
+  "ves-io-proxy-read",
+  "ves-io-proxy-security-read",
+  "ves-io-proxy-security-write",
+  "ves-io-proxy-waf-read",
+  "ves-io-proxy-waf-write",
+  "ves-io-proxy-write"
+]
+```
+
+証明書管理に関連するグループは以下の通りです：
+
+| APIグループ | 付与される権限 |
+| --------- | ------ |
+| `ves-io-proxy-read` | 証明書を含むプロキシリソースへの読み取りアクセス |
+| `ves-io-proxy-write` | 証明書を含むプロキシリソースへの書き込みアクセス |
+
+:::note
+これらのグループは、証明書だけでなく、すべてのプロキシ関連リソース（HTTP Load Balancer、オリジン、ルート、証明書、証明書チェーンなど）をカバーしています。F5 XCは機能領域ごとに権限を整理しています。グループが付与する特定のAPIパスを確認する必要がある場合は、APIリファレンスセクションで説明されている`api_group_elements`エンドポイントを確認してください。
+:::
+
+## ステップ2：カスタムロールの作成
+
+カスタムロール作成エンドポイントを使用します。`api_groups`配列は、ステップ1で検出したシステム定義のapi_group名を参照します。
+
+プロキシリソース（証明書および証明書チェーンを含む）への読み取りおよび書き込みアクセスを持つカスタムロールを作成します：
+
+```bash
+curl -s -X POST \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles" \
+  -d '{
+    "metadata": {
+      "name": "example-cert-admin",
+      "namespace": "system"
+    },
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read",
+      "ves-io-proxy-write"
+    ]
+  }'
+```
+
+## ステップ3：ロールの検証
+
+カスタムGETエンドポイントを使用してロールを取得し、`api_groups`が関連付けられていることを確認します：
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  | jq '{name: .object.metadata.name, api_groups: .api_groups}'
+```
+
+期待される出力：
+
+```json
+{
+  "name": "example-cert-admin",
+  "api_groups": [
+    "ves-io-proxy-read",
+    "ves-io-proxy-write"
+  ]
+}
+```
+
+## ステップ4：ロールの更新（オプション）
+
+既存のロールから`api_groups`を追加または削除するには、カスタムPUTエンドポイントを使用します：
+
+```bash
+curl -s -X PUT \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  -d '{
+    "name": "example-cert-admin",
+    "namespace": "system",
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read"
+    ]
+  }'
+```
+
+この例では、`ves-io-proxy-write`を削除してロールを読み取り専用アクセスにダウングレードします。
+
+## ステップ5：ロールの削除（オプション）
+
+削除には標準のロールエンドポイントを使用します：
+
+```bash
+curl -s -X DELETE \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/system/roles/example-cert-admin"
+```
+
+## APIリファレンス
+
+### ロールエンドポイント（カスタム — `api_groups`を含む）
+
+ロールは常に`system`ネームスペースに存在します。
+
+| メソッド | パス | 説明 |
+| ------ | ---- | ----------- |
+| POST | `/api/web/custom/namespaces/system/roles` | カスタムロールを作成 |
+| GET | `/api/web/custom/namespaces/system/roles` | カスタムロールを一覧表示 |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | カスタムロールを取得 |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | カスタムロールを置換 |
+
+### ロールエンドポイント（標準）
+
+| メソッド | パス | 説明 |
+| ------ | ---- | ----------- |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | ロールを削除 |
+| GET | `/api/web/namespaces/system/roles/{name}` | ロールを取得 |
+| GET | `/api/web/namespaces/system/roles` | ロールを一覧表示 |
+
+### ディスカバリーエンドポイント（読み取り専用）
+
+ディスカバリーは`shared`ネームスペースを使用します。
+
+| メソッド | パス | 説明 |
+| ------ | ---- | ----------- |
+| GET | `/api/web/namespaces/shared/api_groups` | すべてのapi_groupsを一覧表示 |
+| GET | `/api/web/namespaces/shared/api_group_elements` | すべてのapi_group_elementsを一覧表示 |
+
+### 証明書エンドポイント（ロールがアクセスを付与する対象）
+
+`{namespace}`を証明書が管理されているネームスペースに置き換えてください。
+
+| メソッド | パス | 説明 |
+| ------ | ---- | ----------- |
+| POST | `/api/config/namespaces/{namespace}/certificates` | 証明書を作成 |
+| GET | `/api/config/namespaces/{namespace}/certificates` | 証明書を一覧表示 |
+| GET | `/api/config/namespaces/{namespace}/certificates/{name}` | 証明書を取得 |
+| PUT | `/api/config/namespaces/{namespace}/certificates/{name}` | 証明書を置換 |
+| DELETE | `/api/config/namespaces/{namespace}/certificates/{name}` | 証明書を削除 |
+| POST | `/api/config/namespaces/{namespace}/certificate_chains` | 証明書チェーンを作成 |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains` | 証明書チェーンを一覧表示 |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 証明書チェーンを取得 |
+| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 証明書チェーンを置換 |
+| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 証明書チェーンを削除 |
+
+## `api_group`と`api_group_element`が読み取り専用である理由
+
+これらのオブジェクトはF5 XCによって**システム定義**されています。プラットフォームは、すべてのAPIパスに対して`api_group_element`エントリを事前作成し、機能領域ごとに整理された`api_group`オブジェクトにグループ化します。
+
+これらを作成する必要はありません — システム内のすべてのリソースに対して既に存在しています。あなたの作業は、関連するグループ名を**検出**し（ステップ1）、カスタムロールでそれらを**参照**する（ステップ2）ことです。
+
+api_groupがカバーする個別のAPIパスを確認するには、`api_group_elements`エンドポイントを一覧表示し、リソースに関連する要素を探します：
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_group_elements" \
+  | jq '[.items[] | select(.name | test("ves-io-schema-certificate")) | .name]'
+```

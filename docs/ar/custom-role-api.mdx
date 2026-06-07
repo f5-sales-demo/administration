@@ -1,0 +1,273 @@
+---
+title: دور مسؤول الشهادات - واجهة برمجة التطبيقات
+description: >-
+  Create a custom role restricting users to SSL/TLS certificate management via
+  API
+sidebar:
+  label: دور مخصص - واجهة برمجة التطبيقات
+i18n:
+  sourceHash: a4031b2a23ae
+  translator: machine
+---
+
+يرشدك هذا الدليل خلال إنشاء دور RBAC مخصص في F5 Distributed Cloud
+يمنح صلاحية إدارة شهادات SSL/TLS وسلاسل الشهادات
+المستخدمة بواسطة موازنات تحميل HTTP. للاطلاع على النهج المبني على واجهة المستخدم، راجع
+[دليل وحدة التحكم المبسط](./custom-role-ui).
+
+## كيف يعمل RBAC في F5 XC
+
+يستخدم F5 XC نموذج أذونات من ثلاث مستويات:
+
+```
+api_group_element  (read-only, system-defined)
+       │
+       ▼
+   api_group       (read-only, system-defined)
+       │
+       ▼
+     role           (full CRUD — this is what you create)
+```
+
+1. **`api_group_element`** — يحدد مسار regex وطرق HTTP
+   (مثل `POST /api/config/.*/certificates`). يُدار من قبل النظام؛ لا يمكنك
+   إنشاء هذه العناصر أو تعديلها أو حذفها.
+
+2. **`api_group`** — مجموعة مسماة من مراجع `api_group_element`،
+   منظمة حسب المجال الوظيفي. يُدار من قبل النظام؛ لا يمكنك إنشاء هذه العناصر أو تعديلها أو
+   حذفها. تستخدم المجموعات اصطلاحات تسمية مثل `ves-io-proxy-read` أو
+   `f5xc-waap-standard-admin`.
+
+3. **`role`** — يشير إلى أسماء `api_group` في مصفوفة. **هذا هو المستوى الوحيد
+   الذي تقوم بإنشائه.** استخدم نقاط نهاية الأدوار المخصصة لربط
+   `api_groups` محددة بدور.
+
+يتم تجميع عمليات الشهادات لموازنات تحميل HTTP ضمن مجموعات api_groups الخاصة بـ
+`ves-io-proxy-*` إلى جانب الموارد الأخرى المتعلقة بالبروكسي (موازنات تحميل HTTP،
+المسارات، الأصول، إلخ). لا توجد مجموعات api_groups مخصصة للشهادات فقط — تنظم المنصة الأذونات حسب المجال الوظيفي، وليس حسب
+نوع المورد الفردي.
+
+## النطاق والقيود
+
+تمنح مجموعات api_groups الخاصة بـ `ves-io-proxy-read` و `ves-io-proxy-write` الوصول إلى
+**جميع الموارد المتعلقة بالبروكسي**، وليس فقط الشهادات. يمكن للمستخدم المعين لهذا
+الدور أيضاً إدارة موازنات تحميل HTTP، والأصول، والمسارات، والكائنات الأخرى
+ضمن نطاق البروكسي.
+
+RBAC المخصص للشهادات فقط غير ممكن على F5 XC. كل من `api_group` و
+`api_group_element` هي كائنات محددة من النظام وللقراءة فقط — تعرض واجهة برمجة التطبيقات فقط
+نقاط نهاية GET لهذه الكائنات. يمكن للأدوار فقط الإشارة إلى أسماء `api_group`
+الموجودة، ولا توجد `api_group` مخصصة حصرياً للشهادات.
+
+**التخفيف — عزل مساحة الأسماء:** قم بإنشاء مساحة أسماء مخصصة لموارد
+الشهادات وقم بتعيين دور `example-cert-admin` محدد النطاق لتلك
+المساحة فقط. يحتفظ المستخدم بأذونات مستوى البروكسي لكنه لا يستطيع الوصول
+إلى الموارد في مساحات الأسماء الأخرى، مما يحد من نطاق التأثير لنطاق
+api_group الأوسع.
+
+## المتطلبات المسبقة
+
+- رمز واجهة برمجة تطبيقات F5 XC بصلاحيات المسؤول
+- تثبيت `curl` و `jq`
+
+قم بتعيين متغيرات البيئة الخاصة بك:
+
+```bash
+export F5XC_TENANT="your-tenant"
+export F5XC_API_URL="https://${F5XC_TENANT}.console.ves.volterra.io"
+export F5XC_API_TOKEN="your-api-token"
+```
+
+## الخطوة 1: اكتشاف مجموعات API الخاصة بالبروكسي
+
+قم بسرد جميع كائنات `api_group` المحددة من النظام وقم بتصفيتها للإدخالات المتعلقة بالبروكسي
+(التي تتضمن أذونات الشهادات):
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_groups" \
+  | jq '[.items[] | select(.name | test("ves-io-proxy")) | .name] | sort'
+```
+
+الناتج المتوقع:
+
+```json
+[
+  "ves-io-proxy-app-firewall-read",
+  "ves-io-proxy-app-firewall-write",
+  "ves-io-proxy-monitor-read",
+  "ves-io-proxy-monitor-write",
+  "ves-io-proxy-read",
+  "ves-io-proxy-security-read",
+  "ves-io-proxy-security-write",
+  "ves-io-proxy-waf-read",
+  "ves-io-proxy-waf-write",
+  "ves-io-proxy-write"
+]
+```
+
+لإدارة الشهادات، المجموعات ذات الصلة هي:
+
+| مجموعة API | ما تمنحه |
+| --------- | ------ |
+| `ves-io-proxy-read` | وصول للقراءة إلى موارد البروكسي بما في ذلك الشهادات |
+| `ves-io-proxy-write` | وصول للكتابة إلى موارد البروكسي بما في ذلك الشهادات |
+
+:::note
+تغطي هذه المجموعات جميع الموارد المتعلقة بالبروكسي (موازنات تحميل HTTP، الأصول،
+المسارات، الشهادات، سلاسل الشهادات، إلخ)، وليس فقط الشهادات. ينظم F5 XC
+الأذونات حسب المجال الوظيفي. إذا كنت بحاجة للتحقق من مسارات API المحددة التي
+تمنحها مجموعة ما، تحقق من نقطة نهاية `api_group_elements` الموصوفة في
+قسم مرجع واجهة برمجة التطبيقات.
+:::
+
+## الخطوة 2: إنشاء الدور المخصص
+
+استخدم نقطة نهاية إنشاء الدور المخصص. تشير مصفوفة `api_groups` إلى
+أسماء api_group المحددة من النظام التي تم اكتشافها في الخطوة 1.
+
+قم بإنشاء الدور المخصص مع وصول القراءة والكتابة إلى موارد البروكسي (بما في ذلك
+الشهادات وسلاسل الشهادات):
+
+```bash
+curl -s -X POST \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles" \
+  -d '{
+    "metadata": {
+      "name": "example-cert-admin",
+      "namespace": "system"
+    },
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read",
+      "ves-io-proxy-write"
+    ]
+  }'
+```
+
+## الخطوة 3: التحقق من الدور
+
+استرجع الدور باستخدام نقطة نهاية GET المخصصة للتأكد من أن `api_groups`
+مرتبطة:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  | jq '{name: .object.metadata.name, api_groups: .api_groups}'
+```
+
+الناتج المتوقع:
+
+```json
+{
+  "name": "example-cert-admin",
+  "api_groups": [
+    "ves-io-proxy-read",
+    "ves-io-proxy-write"
+  ]
+}
+```
+
+## الخطوة 4: تحديث الدور (اختياري)
+
+لإضافة أو إزالة `api_groups` من دور موجود، استخدم نقطة نهاية PUT
+المخصصة:
+
+```bash
+curl -s -X PUT \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${F5XC_API_URL}/api/web/custom/namespaces/system/roles/example-cert-admin" \
+  -d '{
+    "name": "example-cert-admin",
+    "namespace": "system",
+    "spec": {},
+    "api_groups": [
+      "ves-io-proxy-read"
+    ]
+  }'
+```
+
+يقوم هذا المثال بتخفيض مستوى الدور إلى وصول القراءة فقط عن طريق إزالة
+`ves-io-proxy-write`.
+
+## الخطوة 5: حذف الدور (اختياري)
+
+يستخدم الحذف نقطة نهاية الدور القياسية:
+
+```bash
+curl -s -X DELETE \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/system/roles/example-cert-admin"
+```
+
+## مرجع واجهة برمجة التطبيقات
+
+### نقاط نهاية الأدوار (المخصصة — تتضمن `api_groups`)
+
+الأدوار دائماً في مساحة أسماء `system`.
+
+| الطريقة | المسار | الوصف |
+| ------ | ---- | ----------- |
+| POST | `/api/web/custom/namespaces/system/roles` | إنشاء دور مخصص |
+| GET | `/api/web/custom/namespaces/system/roles` | سرد الأدوار المخصصة |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | الحصول على دور مخصص |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | استبدال دور مخصص |
+
+### نقاط نهاية الأدوار (القياسية)
+
+| الطريقة | المسار | الوصف |
+| ------ | ---- | ----------- |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | حذف دور |
+| GET | `/api/web/namespaces/system/roles/{name}` | الحصول على دور |
+| GET | `/api/web/namespaces/system/roles` | سرد الأدوار |
+
+### نقاط نهاية الاكتشاف (للقراءة فقط)
+
+يستخدم الاكتشاف مساحة أسماء `shared`.
+
+| الطريقة | المسار | الوصف |
+| ------ | ---- | ----------- |
+| GET | `/api/web/namespaces/shared/api_groups` | سرد جميع api_groups |
+| GET | `/api/web/namespaces/shared/api_group_elements` | سرد جميع api_group_elements |
+
+### نقاط نهاية الشهادات (ما يمنح الدور الوصول إليه)
+
+استبدل `{namespace}` بمساحة الأسماء التي تُدار فيها شهاداتك.
+
+| الطريقة | المسار | الوصف |
+| ------ | ---- | ----------- |
+| POST | `/api/config/namespaces/{namespace}/certificates` | إنشاء شهادة |
+| GET | `/api/config/namespaces/{namespace}/certificates` | سرد الشهادات |
+| GET | `/api/config/namespaces/{namespace}/certificates/{name}` | الحصول على شهادة |
+| PUT | `/api/config/namespaces/{namespace}/certificates/{name}` | استبدال شهادة |
+| DELETE | `/api/config/namespaces/{namespace}/certificates/{name}` | حذف شهادة |
+| POST | `/api/config/namespaces/{namespace}/certificate_chains` | إنشاء سلسلة شهادات |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains` | سرد سلاسل الشهادات |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | الحصول على سلسلة شهادات |
+| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | استبدال سلسلة شهادات |
+| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | حذف سلسلة شهادات |
+
+## لماذا `api_group` و `api_group_element` للقراءة فقط
+
+هذه الكائنات **محددة من النظام** بواسطة F5 XC. تقوم المنصة بإنشاء
+إدخالات `api_group_element` مسبقاً لكل مسار API وتجمعها في
+كائنات `api_group` منظمة حسب المجال الوظيفي.
+
+لست بحاجة لإنشاء هذه العناصر — فهي موجودة بالفعل لكل مورد في
+النظام. مهمتك هي **اكتشاف** أسماء المجموعات ذات الصلة (الخطوة 1) و
+**الإشارة** إليها في دورك المخصص (الخطوة 2).
+
+لمعرفة مسارات API الفردية التي تغطيها api_group، قم بسرد
+نقطة نهاية `api_group_elements` وابحث عن العناصر المتعلقة بموردك:
+
+```bash
+curl -s \
+  -H "Authorization: APIToken ${F5XC_API_TOKEN}" \
+  "${F5XC_API_URL}/api/web/namespaces/shared/api_group_elements" \
+  | jq '[.items[] | select(.name | test("ves-io-schema-certificate")) | .name]'
+```
