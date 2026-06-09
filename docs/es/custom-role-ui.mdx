@@ -10,7 +10,10 @@ i18n:
   translator: machine
 ---
 
-Esta guía explica cómo crear un rol RBAC personalizado utilizando la interfaz de consola de F5 Distributed Cloud. El rol otorga acceso para gestionar certificados SSL/TLS y cadenas de certificados utilizados por los HTTP Load Balancers. Para el enfoque programático (API), consulte la [guía de API](./custom-role-api).
+Esta guía explica cómo crear un rol RBAC personalizado utilizando la interfaz de la
+Consola de F5 Distributed Cloud. El rol otorga acceso para gestionar certificados
+SSL/TLS y cadenas de certificados utilizados por los HTTP Load Balancers. Para el
+enfoque programático (API), consulte la [guía de API](./custom-role-api).
 
 ## Cómo Funciona el RBAC de F5 XC
 
@@ -27,19 +30,20 @@ api_group_element  (solo lectura, definido por el sistema)
 ```
 
 1. **`api_group_element`** — Define una ruta regex y métodos HTTP
-   (p. ej., `POST /api/config/.*/certificates`). Gestionado por el sistema; no puede
+   (por ejemplo, `POST /api/config/.*/certificates`). Gestionado por el sistema; no puede
    crear, modificar ni eliminar estos elementos.
 
-2. **`api_group`** — Una colección con nombre de referencias a `api_group_element`,
+2. **`api_group`** — Una colección nombrada de referencias a `api_group_element`,
    organizada por área funcional. Gestionado por el sistema; no puede crear, modificar ni
    eliminar estos elementos. Los grupos utilizan convenciones de nomenclatura como `ves-io-proxy-read` o
    `f5xc-waap-standard-admin`.
 
 3. **`role`** — Hace referencia a nombres de `api_group` en un array. **Este es el único
-   nivel que usted crea.** Utilice los endpoints de rol personalizado para asociar
+   nivel que usted crea.** Utilice los endpoints de roles personalizados para asociar
    `api_groups` específicos a un rol.
 
-Al seleccionar los grupos de lectura/escritura de proxy, el rol `example-cert-admin` otorga gestión de certificados SSL/TLS como parte del acceso más amplio a recursos de proxy.
+Al seleccionar los grupos de lectura/escritura de proxy, el rol `example-cert-admin` otorga gestión
+de certificados SSL/TLS como parte de un acceso más amplio a recursos de proxy.
 
 ## Alcance y Limitaciones
 
@@ -47,22 +51,23 @@ Seleccionar los grupos de lectura/escritura de proxy otorga acceso a **todos los
 en el namespace asignado — HTTP Load Balancers, orígenes, rutas y
 certificados por igual. No hay forma de restringir el rol únicamente a certificados.
 
-F5 XC no admite objetos `api_group` o `api_group_element` creados por el usuario. La plataforma los predefine como solo lectura, y los roles solo pueden
-hacer referencia a nombres de grupos existentes. Ningún grupo definido por el sistema está limitado exclusivamente
-a operaciones de certificados.
+F5 XC no admite objetos `api_group` o `api_group_element` creados por el usuario.
+La plataforma los predefine como solo lectura, y los roles solo pueden hacer
+referencia a nombres de grupos existentes. Ningún grupo definido por el sistema está limitado
+exclusivamente a operaciones de certificados.
 
 **Mitigación — aislamiento por namespace:** Coloque los recursos de certificados en un
 namespace dedicado y limite el alcance del rol `example-cert-admin` a ese namespace. Esto
 evita que el usuario acceda a recursos de proxy en otros namespaces mientras
-sigue otorgando gestión completa de certificados dentro del namespace aislado.
+se le otorga gestión completa de certificados dentro del namespace aislado.
 
 ## Requisitos Previos
 
-- Acceso de administrador a la consola de F5 Distributed Cloud
+- Acceso de administrador a la Consola de F5 Distributed Cloud
 
 ## Paso 1: Navegar a la Gestión de Roles
 
-1. Inicie sesión en la consola de F5 Distributed Cloud
+1. Inicie sesión en la Consola de F5 Distributed Cloud
 2. Haga clic en el mosaico **Administration** en la página de inicio
 3. En el menú de navegación izquierdo, seleccione **IAM** &gt; **Roles**
 4. Haga clic en **+ Add Role**
@@ -77,9 +82,9 @@ Reglas de nomenclatura de roles:
 - Debe comenzar con dos letras minúsculas
 - Máximo 64 caracteres
 
-## Paso 3: Agregar los Grupos de API de Proxy
+## Paso 3: Agregar Grupos de API de Proxy
 
-Los permisos de certificados forman parte del área funcional de proxy. Agregue los
+Los permisos de certificados son parte del área funcional de proxy. Agregue los
 siguientes grupos de API para otorgar acceso a la gestión de certificados:
 
 1. Haga clic en **+ Allowed API Groups**
@@ -101,14 +106,14 @@ organiza los permisos por área funcional, no por tipo de recurso individual.
 
 ## Paso 4: Guardar el Rol
 
-Revise los grupos de API seleccionados en el resumen y luego haga clic en **Save** para crear
+Revise los grupos de API seleccionados en el resumen, luego haga clic en **Save** para crear
 el rol.
 
 ## Paso 5: Verificar el Rol
 
 1. Navegue a **IAM** &gt; **Roles**
 2. Haga clic en **example-cert-admin** en la lista de roles
-3. Confirme que ambos grupos de API están listados
+3. Confirme que ambos grupos de API estén listados
 
 ## Referencias
 
