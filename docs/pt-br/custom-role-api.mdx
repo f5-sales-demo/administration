@@ -1,23 +1,23 @@
 ---
-title: Função de Administrador de Certificados - API
+title: Role de Administrador de Certificados - API
 description: >-
-  Criar uma função personalizada restringindo usuários ao gerenciamento de
+  Criar um role personalizado restringindo usuários ao gerenciamento de
   certificados SSL/TLS via API
 sidebar:
-  label: Função Personalizada - API
+  label: Role Personalizado - API
 i18n:
   sourceHash: a4031b2a23ae
   translator: machine
 ---
 
-Este guia orienta a criação de uma função RBAC personalizada no F5 Distributed Cloud
+Este guia orienta a criação de um role RBAC personalizado no F5 Distributed Cloud
 que concede permissão para gerenciar certificados SSL/TLS e cadeias de certificados
-utilizados por HTTP Load Balancers. Para uma abordagem baseada na interface, consulte o
+utilizados por HTTP Load Balancers. Para uma abordagem baseada em interface, consulte o
 [guia simplificado do console](./custom-role-ui).
 
 ## Como o RBAC do F5 XC Funciona
 
-O F5 XC utiliza um modelo de permissão em três camadas:
+O F5 XC utiliza um modelo de permissões de três camadas:
 
 ```
 api_group_element  (somente leitura, definido pelo sistema)
@@ -31,37 +31,37 @@ api_group_element  (somente leitura, definido pelo sistema)
 
 1. **`api_group_element`** — Define um caminho regex e métodos HTTP
    (ex.: `POST /api/config/.*/certificates`). Gerenciado pelo sistema; você não pode
-   criar, modificar ou excluir esses elementos.
+   criar, modificar ou excluir esses objetos.
 
 2. **`api_group`** — Uma coleção nomeada de referências a `api_group_element`,
    organizada por área funcional. Gerenciado pelo sistema; você não pode criar, modificar ou
-   excluir esses elementos. Os grupos utilizam convenções de nomenclatura como `ves-io-proxy-read` ou
+   excluir esses objetos. Os grupos usam convenções de nomenclatura como `ves-io-proxy-read` ou
    `f5xc-waap-standard-admin`.
 
 3. **`role`** — Referencia nomes de `api_group` em um array. **Esta é a única
-   camada que você cria.** Utilize os endpoints de função personalizada para vincular
-   `api_groups` específicos a uma função.
+   camada que você cria.** Use os endpoints de role personalizado para anexar
+   `api_groups` específicos a um role.
 
 As operações de certificado para HTTP Load Balancers estão agrupadas nos
-api_groups `ves-io-proxy-*` juntamente com outros recursos relacionados a proxy (HTTP Load
+api_groups `ves-io-proxy-*` junto com outros recursos relacionados a proxy (HTTP Load
 Balancers, rotas, origens, etc.). Não existem api_groups exclusivos para certificados — a plataforma organiza permissões por área funcional, não por
-tipo de recurso individual.
+tipo individual de recurso.
 
 ## Escopo e Limitações
 
 Os api_groups `ves-io-proxy-read` e `ves-io-proxy-write` concedem acesso a
-**todos os recursos relacionados a proxy**, não apenas certificados. Um usuário atribuído a esta
-função também pode gerenciar HTTP Load Balancers, origens, rotas e outros
+**todos os recursos relacionados a proxy**, não apenas certificados. Um usuário com este
+role também pode gerenciar HTTP Load Balancers, origens, rotas e outros
 objetos no escopo de proxy.
 
 RBAC exclusivo para certificados não é possível no F5 XC. Tanto `api_group` quanto
 `api_group_element` são objetos definidos pelo sistema e somente leitura — a API expõe apenas
-endpoints GET para esses objetos. As funções só podem referenciar nomes de `api_group`
-existentes, e não há nenhum `api_group` com escopo exclusivo para certificados.
+endpoints GET para esses objetos. Roles só podem referenciar nomes de `api_group`
+existentes, e não existe nenhum `api_group` com escopo exclusivo para certificados.
 
 **Mitigação — isolamento por namespace:** Crie um namespace dedicado para
-recursos de certificado e atribua a função `example-cert-admin` com escopo restrito a esse
-namespace apenas. O usuário mantém permissões no nível de proxy, mas não pode acessar
+recursos de certificado e atribua o role `example-cert-admin` com escopo apenas para esse
+namespace. O usuário mantém as permissões no nível de proxy, mas não pode acessar
 recursos em outros namespaces, limitando o raio de impacto do escopo mais amplo
 do api_group.
 
@@ -117,17 +117,17 @@ Para gerenciamento de certificados, os grupos relevantes são:
 :::note
 Esses grupos cobrem todos os recursos relacionados a proxy (HTTP Load Balancers, origens,
 rotas, certificados, cadeias de certificados, etc.), não apenas certificados. O F5 XC
-organiza permissões por área funcional. Se você precisar verificar quais caminhos
-de API específicos um grupo concede, consulte o endpoint `api_group_elements` descrito na
+organiza permissões por área funcional. Se você precisar verificar quais caminhos de API
+específicos um grupo concede, consulte o endpoint `api_group_elements` descrito na
 seção Referência da API.
 :::
 
-## Etapa 2: Criar a Função Personalizada
+## Etapa 2: Criar o Role Personalizado
 
-Utilize o endpoint de criação de função personalizada. O array `api_groups` referencia os
+Use o endpoint de criação de role personalizado. O array `api_groups` referencia os
 nomes de api_group definidos pelo sistema descobertos na Etapa 1.
 
-Crie a função personalizada com acesso de leitura e escrita a recursos de proxy (incluindo
+Crie o role personalizado com acesso de leitura e escrita a recursos de proxy (incluindo
 certificados e cadeias de certificados):
 
 ```bash
@@ -148,10 +148,10 @@ curl -s -X POST \
   }'
 ```
 
-## Etapa 3: Verificar a Função
+## Etapa 3: Verificar o Role
 
-Recupere a função utilizando o endpoint GET personalizado para confirmar que os `api_groups`
-estão vinculados:
+Recupere o role usando o endpoint GET personalizado para confirmar que os `api_groups`
+estão anexados:
 
 ```bash
 curl -s \
@@ -172,9 +172,9 @@ Saída esperada:
 }
 ```
 
-## Etapa 4: Atualizar a Função (Opcional)
+## Etapa 4: Atualizar o Role (Opcional)
 
-Para adicionar ou remover `api_groups` de uma função existente, utilize o endpoint PUT
+Para adicionar ou remover `api_groups` de um role existente, use o endpoint PUT
 personalizado:
 
 ```bash
@@ -192,12 +192,12 @@ curl -s -X PUT \
   }'
 ```
 
-Este exemplo rebaixa a função para acesso somente leitura removendo
+Este exemplo rebaixa o role para acesso somente leitura removendo
 `ves-io-proxy-write`.
 
-## Etapa 5: Excluir a Função (Opcional)
+## Etapa 5: Excluir o Role (Opcional)
 
-A exclusão utiliza o endpoint padrão de função:
+A exclusão usa o endpoint padrão de role:
 
 ```bash
 curl -s -X DELETE \
@@ -207,35 +207,35 @@ curl -s -X DELETE \
 
 ## Referência da API
 
-### Endpoints de Função (Personalizados — incluem `api_groups`)
+### Endpoints de Role (Personalizados — incluem `api_groups`)
 
-As funções estão sempre no namespace `system`.
-
-| Método | Caminho | Descrição |
-| ------ | ------- | --------- |
-| POST | `/api/web/custom/namespaces/system/roles` | Criar uma função personalizada |
-| GET | `/api/web/custom/namespaces/system/roles` | Listar funções personalizadas |
-| GET | `/api/web/custom/namespaces/system/roles/{name}` | Obter uma função personalizada |
-| PUT | `/api/web/custom/namespaces/system/roles/{name}` | Substituir uma função personalizada |
-
-### Endpoints de Função (Padrão)
+Roles estão sempre no namespace `system`.
 
 | Método | Caminho | Descrição |
 | ------ | ------- | --------- |
-| DELETE | `/api/web/namespaces/system/roles/{name}` | Excluir uma função |
-| GET | `/api/web/namespaces/system/roles/{name}` | Obter uma função |
-| GET | `/api/web/namespaces/system/roles` | Listar funções |
+| POST | `/api/web/custom/namespaces/system/roles` | Criar um role personalizado |
+| GET | `/api/web/custom/namespaces/system/roles` | Listar roles personalizados |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | Obter um role personalizado |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | Substituir um role personalizado |
+
+### Endpoints de Role (Padrão)
+
+| Método | Caminho | Descrição |
+| ------ | ------- | --------- |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | Excluir um role |
+| GET | `/api/web/namespaces/system/roles/{name}` | Obter um role |
+| GET | `/api/web/namespaces/system/roles` | Listar roles |
 
 ### Endpoints de Descoberta (Somente Leitura)
 
-A descoberta utiliza o namespace `shared`.
+A descoberta usa o namespace `shared`.
 
 | Método | Caminho | Descrição |
 | ------ | ------- | --------- |
 | GET | `/api/web/namespaces/shared/api_groups` | Listar todos os api_groups |
 | GET | `/api/web/namespaces/shared/api_group_elements` | Listar todos os api_group_elements |
 
-### Endpoints de Certificado (O Que a Função Concede Acesso)
+### Endpoints de Certificado (O que o Role Concede Acesso)
 
 Substitua `{namespace}` pelo namespace onde seus certificados são gerenciados.
 
@@ -252,18 +252,18 @@ Substitua `{namespace}` pelo namespace onde seus certificados são gerenciados.
 | PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | Substituir uma cadeia de certificados |
 | DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | Excluir uma cadeia de certificados |
 
-## Por Que `api_group` e `api_group_element` São Somente Leitura
+## Por que `api_group` e `api_group_element` São Somente Leitura
 
 Esses objetos são **definidos pelo sistema** pelo F5 XC. A plataforma pré-cria
-entradas de `api_group_element` para cada caminho de API e as agrupa em
+entradas de `api_group_element` para cada caminho de API e os agrupa em
 objetos `api_group` organizados por área funcional.
 
-Você não precisa criar esses objetos — eles já existem para cada recurso no
+Você não precisa criá-los — eles já existem para cada recurso no
 sistema. Sua tarefa é **descobrir** os nomes de grupo relevantes (Etapa 1) e
-**referenciá-los** na sua função personalizada (Etapa 2).
+**referenciá-los** no seu role personalizado (Etapa 2).
 
 Para ver quais caminhos de API individuais um api_group cobre, liste o
-endpoint `api_group_elements` e procure por elementos relacionados ao seu recurso:
+endpoint `api_group_elements` e procure elementos relacionados ao seu recurso:
 
 ```bash
 curl -s \

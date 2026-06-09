@@ -1,6 +1,6 @@
 ---
-title: 憑證管理員角色 - API
-description: 透過 API 建立自訂角色，將使用者限制為 SSL/TLS 憑證管理
+title: 憑證管理角色 - API
+description: 透過 API 建立自訂角色，限制使用者僅能管理 SSL/TLS 憑證
 sidebar:
   label: 自訂角色 - API
 i18n:
@@ -8,41 +8,42 @@ i18n:
   translator: machine
 ---
 
-本指南將逐步說明如何在 F5 Distributed Cloud 中建立自訂 RBAC 角色，授予管理 HTTP Load Balancer 所使用的 SSL/TLS 憑證和憑證鏈的權限。如需基於 UI 的方法，請參閱[簡化的主控台指南](./custom-role-ui)。
+本指南將逐步說明如何在 F5 Distributed Cloud 中建立自訂 RBAC 角色，授予管理 HTTP Load Balancer 所使用的 SSL/TLS 憑證和憑證鏈的權限。若要使用基於 UI 的方式，請參閱[簡化主控台指南](./custom-role-ui)。
 
-## F5 XC RBAC 運作方式
+## F5 XC RBAC 的運作方式
 
 F5 XC 使用三層權限模型：
 
 ```
-api_group_element  (read-only, system-defined)
+api_group_element  (唯讀，系統定義)
        │
        ▼
-   api_group       (read-only, system-defined)
+   api_group       (唯讀，系統定義)
        │
        ▼
-     role           (full CRUD — this is what you create)
+     role           (完整 CRUD — 這是您要建立的部分)
 ```
 
-1. **`api_group_element`** — 定義正規表示式路徑和 HTTP 方法（例如 `POST /api/config/.*/certificates`）。由系統管理；您無法建立、修改或刪除這些物件。
+1. **`api_group_element`** — 定義正規表達式路徑和 HTTP 方法
+   （例如 `POST /api/config/.*/certificates`）。由系統管理；您無法建立、修改或刪除這些物件。
 
-2. **`api_group`** — `api_group_element` 參考的具名集合，按功能區域組織。由系統管理；您無法建立、修改或刪除這些物件。群組使用如 `ves-io-proxy-read` 或 `f5xc-waap-standard-admin` 的命名慣例。
+2. **`api_group`** — 依功能區域組織的 `api_group_element` 參考集合，具有命名名稱。由系統管理；您無法建立、修改或刪除這些物件。群組使用如 `ves-io-proxy-read` 或 `f5xc-waap-standard-admin` 的命名慣例。
 
-3. **`role`** — 在陣列中參考 `api_group` 名稱。**這是您唯一需要建立的層級。** 使用自訂角色端點將特定的 `api_groups` 附加到角色。
+3. **`role`** — 在陣列中參考 `api_group` 名稱。**這是您唯一需要建立的層級。**使用自訂角色端點將特定的 `api_groups` 附加到角色。
 
-HTTP Load Balancer 的憑證操作與其他代理相關資源（HTTP Load Balancer、路由、來源等）一同包含在 `ves-io-proxy-*` api_groups 中。沒有獨立的僅限憑證的 api_groups — 平台按功能區域組織權限，而非按個別資源類型。
+HTTP Load Balancer 的憑證操作與其他代理相關資源（HTTP Load Balancer、路由、來源等）一起綁定在 `ves-io-proxy-*` api_groups 中。平台沒有獨立的憑證專用 api_groups — 權限是依功能區域組織，而非依個別資源類型。
 
 ## 範圍與限制
 
-`ves-io-proxy-read` 和 `ves-io-proxy-write` api_groups 授予對**所有代理相關資源**的存取權，而不僅僅是憑證。被指派此角色的使用者也可以管理 HTTP Load Balancer、來源、路由及其他代理範圍的物件。
+`ves-io-proxy-read` 和 `ves-io-proxy-write` api_groups 授予對**所有代理相關資源**的存取權限，不僅限於憑證。被指派此角色的使用者也可以管理 HTTP Load Balancer、來源、路由和其他代理範圍內的物件。
 
-在 F5 XC 上無法實現僅限憑證的 RBAC。`api_group` 和 `api_group_element` 都是系統定義的唯讀物件 — API 僅公開這些物件的 GET 端點。角色只能參考現有的 `api_group` 名稱，且沒有專門限定於憑證的 `api_group`。
+在 F5 XC 上無法實現僅限憑證的 RBAC。`api_group` 和 `api_group_element` 都是系統定義的唯讀物件 — API 僅公開這些物件的 GET 端點。角色只能參考現有的 `api_group` 名稱，而且沒有任何 `api_group` 專門限定於憑證範圍。
 
-**緩解措施 — 命名空間隔離：** 為憑證資源建立專用的命名空間，並將 `example-cert-admin` 角色僅指派到該命名空間的範圍內。使用者保留代理層級的權限，但無法存取其他命名空間中的資源，從而限制較廣泛 api_group 範圍的影響範圍。
+**緩解措施 — 命名空間隔離：**建立專用的命名空間來存放憑證資源，並將 `example-cert-admin` 角色的範圍僅指派給該命名空間。使用者保留代理層級的權限，但無法存取其他命名空間中的資源，從而限制較廣泛 api_group 範圍的影響範圍。
 
 ## 先決條件
 
-- 具有管理員權限的 F5 XC API 權杖
+- 具有管理員權限的 F5 XC API 令牌
 - 已安裝 `curl` 和 `jq`
 
 設定您的環境變數：
@@ -55,7 +56,7 @@ export F5XC_API_TOKEN="your-api-token"
 
 ## 步驟 1：探索代理 API 群組
 
-列出所有系統定義的 `api_group` 物件，並篩選代理相關的項目（包含憑證權限）：
+列出所有系統定義的 `api_group` 物件，並篩選代理相關的項目（其中包含憑證權限）：
 
 ```bash
 curl -s \
@@ -85,18 +86,18 @@ curl -s \
 
 | API 群組 | 授予權限 |
 | --------- | ------ |
-| `ves-io-proxy-read` | 代理資源（包含憑證）的讀取存取權 |
-| `ves-io-proxy-write` | 代理資源（包含憑證）的寫入存取權 |
+| `ves-io-proxy-read` | 對代理資源（包含憑證）的讀取權限 |
+| `ves-io-proxy-write` | 對代理資源（包含憑證）的寫入權限 |
 
 :::note
-這些群組涵蓋所有代理相關資源（HTTP Load Balancer、來源、路由、憑證、憑證鏈等），而不僅僅是憑證。F5 XC 按功能區域組織權限。如果您需要驗證某個群組授予哪些特定 API 路徑，請查看 API 參考章節中描述的 `api_group_elements` 端點。
+這些群組涵蓋所有代理相關資源（HTTP Load Balancer、來源、路由、憑證、憑證鏈等），不僅限於憑證。F5 XC 依功能區域組織權限。若您需要驗證群組授予哪些特定 API 路徑，請查閱 API 參考章節中描述的 `api_group_elements` 端點。
 :::
 
 ## 步驟 2：建立自訂角色
 
 使用自訂角色建立端點。`api_groups` 陣列參考在步驟 1 中探索到的系統定義 api_group 名稱。
 
-建立具有代理資源（包含憑證和憑證鏈）讀寫存取權的自訂角色：
+建立具有代理資源（包含憑證和憑證鏈）讀寫權限的自訂角色：
 
 ```bash
 curl -s -X POST \
@@ -118,7 +119,7 @@ curl -s -X POST \
 
 ## 步驟 3：驗證角色
 
-使用自訂 GET 端點擷取角色，以確認 `api_groups` 已附加：
+使用自訂 GET 端點擷取角色，確認 `api_groups` 已附加：
 
 ```bash
 curl -s \
@@ -158,7 +159,7 @@ curl -s -X PUT \
   }'
 ```
 
-此範例透過移除 `ves-io-proxy-write` 將角色降級為唯讀存取權。
+此範例透過移除 `ves-io-proxy-write` 將角色降級為唯讀存取。
 
 ## 步驟 5：刪除角色（選用）
 
@@ -176,7 +177,7 @@ curl -s -X DELETE \
 
 角色始終位於 `system` 命名空間中。
 
-| 方法 | 路徑 | 描述 |
+| 方法 | 路徑 | 說明 |
 | ------ | ---- | ----------- |
 | POST | `/api/web/custom/namespaces/system/roles` | 建立自訂角色 |
 | GET | `/api/web/custom/namespaces/system/roles` | 列出自訂角色 |
@@ -185,7 +186,7 @@ curl -s -X DELETE \
 
 ### 角色端點（標準）
 
-| 方法 | 路徑 | 描述 |
+| 方法 | 路徑 | 說明 |
 | ------ | ---- | ----------- |
 | DELETE | `/api/web/namespaces/system/roles/{name}` | 刪除角色 |
 | GET | `/api/web/namespaces/system/roles/{name}` | 取得角色 |
@@ -195,16 +196,16 @@ curl -s -X DELETE \
 
 探索使用 `shared` 命名空間。
 
-| 方法 | 路徑 | 描述 |
+| 方法 | 路徑 | 說明 |
 | ------ | ---- | ----------- |
 | GET | `/api/web/namespaces/shared/api_groups` | 列出所有 api_groups |
 | GET | `/api/web/namespaces/shared/api_group_elements` | 列出所有 api_group_elements |
 
-### 憑證端點（角色授予存取權的對象）
+### 憑證端點（角色授予存取權限的對象）
 
-將 `{namespace}` 替換為管理您憑證的命名空間。
+將 `{namespace}` 替換為管理憑證的命名空間。
 
-| 方法 | 路徑 | 描述 |
+| 方法 | 路徑 | 說明 |
 | ------ | ---- | ----------- |
 | POST | `/api/config/namespaces/{namespace}/certificates` | 建立憑證 |
 | GET | `/api/config/namespaces/{namespace}/certificates` | 列出憑證 |
@@ -217,13 +218,13 @@ curl -s -X DELETE \
 | PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 取代憑證鏈 |
 | DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | 刪除憑證鏈 |
 
-## 為何 `api_group` 和 `api_group_element` 是唯讀的
+## 為什麼 `api_group` 和 `api_group_element` 是唯讀的
 
-這些物件由 F5 XC **系統定義**。平台會為每個 API 路徑預先建立 `api_group_element` 項目，並將它們按功能區域分組為 `api_group` 物件。
+這些物件由 F5 XC **系統定義**。平台會為每個 API 路徑預先建立 `api_group_element` 項目，並將它們依功能區域分組到 `api_group` 物件中。
 
-您不需要建立這些物件 — 系統中每個資源的物件已經存在。您的工作是**探索**相關的群組名稱（步驟 1）並在您的自訂角色中**參考**它們（步驟 2）。
+您不需要建立這些物件 — 系統中的每個資源都已經有對應的物件。您的工作是**探索**相關的群組名稱（步驟 1），並在自訂角色中**參考**它們（步驟 2）。
 
-若要查看某個 api_group 涵蓋哪些個別 API 路徑，請列出 `api_group_elements` 端點並尋找與您的資源相關的元素：
+若要查看 api_group 涵蓋哪些個別 API 路徑，請列出 `api_group_elements` 端點並尋找與您的資源相關的元素：
 
 ```bash
 curl -s \

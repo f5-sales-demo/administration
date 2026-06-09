@@ -1,18 +1,18 @@
 ---
-title: Zertifikat-Admin-Rolle - UI
+title: Zertifikatverwaltungsrolle – UI
 description: >-
-  Erstellen einer benutzerdefinierten Rolle zur Beschränkung von Benutzern auf
-  die SSL/TLS-Zertifikatverwaltung über die F5 XC Console-Benutzeroberfläche
+  Erstellen einer benutzerdefinierten Rolle zur Einschränkung von Benutzern auf
+  die SSL/TLS-Zertifikatverwaltung über die F5 XC-Konsolen-UI
 sidebar:
-  label: Benutzerdefinierte Rolle - UI
+  label: Benutzerdefinierte Rolle – UI
 i18n:
   sourceHash: d115af97c1da
   translator: machine
 ---
 
-Diese Anleitung führt Sie durch die Erstellung einer benutzerdefinierten RBAC-Rolle mithilfe der F5 Distributed Cloud Console-Benutzeroberfläche. Die Rolle gewährt Zugriff auf die Verwaltung von SSL/TLS-Zertifikaten und Zertifikatsketten, die von HTTP Load Balancern verwendet werden. Für den programmatischen (API-)Ansatz siehe die [API-Anleitung](./custom-role-api).
+Diese Anleitung beschreibt die Erstellung einer benutzerdefinierten RBAC-Rolle über die F5 Distributed Cloud Console-UI. Die Rolle gewährt Zugriff auf die Verwaltung von SSL/TLS-Zertifikaten und Zertifikatsketten, die von HTTP Load Balancern verwendet werden. Für den programmatischen (API-)Ansatz siehe die [API-Anleitung](./custom-role-api).
 
-## Wie F5 XC RBAC funktioniert
+## Funktionsweise von F5 XC RBAC
 
 F5 XC verwendet ein dreistufiges Berechtigungsmodell:
 
@@ -23,7 +23,7 @@ api_group_element  (schreibgeschützt, systemdefiniert)
    api_group       (schreibgeschützt, systemdefiniert)
        │
        ▼
-     role           (volle CRUD-Rechte — dies erstellen Sie)
+     role           (vollständiges CRUD — dies erstellen Sie)
 ```
 
 1. **`api_group_element`** — Definiert einen Regex-Pfad und HTTP-Methoden
@@ -36,18 +36,30 @@ api_group_element  (schreibgeschützt, systemdefiniert)
    `ves-io-proxy-read` oder `f5xc-waap-standard-admin`.
 
 3. **`role`** — Referenziert `api_group`-Namen in einem Array. **Dies ist die
-   einzige Stufe, die Sie erstellen.** Verwenden Sie die Endpunkte für
-   benutzerdefinierte Rollen, um bestimmte `api_groups` einer Rolle zuzuweisen.
+   einzige Ebene, die Sie erstellen.** Verwenden Sie die Endpunkte für
+   benutzerdefinierte Rollen, um spezifische `api_groups` einer Rolle
+   zuzuweisen.
 
-Durch die Auswahl der Proxy-Lese-/Schreibgruppen gewährt die Rolle `example-cert-admin` die SSL/TLS-Zertifikatverwaltung als Teil eines breiteren Zugriffs auf Proxy-Ressourcen.
+Durch die Auswahl der Proxy-Lese-/Schreibgruppen gewährt die Rolle `example-cert-admin`
+die SSL/TLS-Zertifikatverwaltung als Teil des breiteren Proxy-Ressourcenzugriffs.
 
 ## Umfang und Einschränkungen
 
-Die Auswahl der Proxy-Lese-/Schreibgruppen gewährt Zugriff auf **alle Proxy-Ressourcen** im zugewiesenen Namespace — HTTP Load Balancer, Origins, Routen und Zertifikate gleichermaßen. Es gibt keine Möglichkeit, die Rolle ausschließlich auf Zertifikate zu beschränken.
+Die Auswahl der Proxy-Lese-/Schreibgruppen gewährt Zugriff auf **alle Proxy-Ressourcen**
+im zugewiesenen Namespace — HTTP Load Balancer, Origins, Routen und
+Zertifikate gleichermaßen. Es gibt keine Möglichkeit, die Rolle ausschließlich auf
+Zertifikate einzuschränken.
 
-F5 XC unterstützt keine vom Benutzer erstellten `api_group`- oder `api_group_element`-Objekte. Die Plattform definiert diese als schreibgeschützt vor, und Rollen können nur auf bestehende Gruppennamen verweisen. Keine systemdefinierte Gruppe ist ausschließlich auf Zertifikatsoperationen beschränkt.
+F5 XC unterstützt keine vom Benutzer erstellten `api_group`- oder `api_group_element`-Objekte.
+Die Plattform definiert diese als schreibgeschützt vor, und Rollen können nur
+auf vorhandene Gruppennamen verweisen. Keine systemdefinierte Gruppe ist
+ausschließlich auf Zertifikatoperationen beschränkt.
 
-**Abhilfe — Namespace-Isolierung:** Platzieren Sie Zertifikatsressourcen in einem dedizierten Namespace und beschränken Sie die Rolle `example-cert-admin` auf diesen Namespace. Dies verhindert, dass der Benutzer auf Proxy-Ressourcen in anderen Namespaces zugreift, während gleichzeitig die vollständige Zertifikatverwaltung innerhalb des isolierten Namespace gewährt wird.
+**Abhilfemaßnahme — Namespace-Isolation:** Platzieren Sie Zertifikatressourcen in
+einem dedizierten Namespace und beschränken Sie die Rolle `example-cert-admin` auf diesen
+Namespace. Dies verhindert, dass der Benutzer auf Proxy-Ressourcen in anderen
+Namespaces zugreift, während die vollständige Zertifikatverwaltung innerhalb des
+isolierten Namespace gewährt bleibt.
 
 ## Voraussetzungen
 
@@ -62,9 +74,9 @@ F5 XC unterstützt keine vom Benutzer erstellten `api_group`- oder `api_group_el
 
 ## Schritt 2: Rolle benennen
 
-Geben Sie `example-cert-admin` in das Feld **Role Name** ein.
+Geben Sie `example-cert-admin` im Feld **Role Name** ein.
 
-Regeln für Rollennamen:
+Regeln für die Rollenbenennung:
 
 - Nur Kleinbuchstaben, Zahlen und Bindestriche
 - Muss mit zwei Kleinbuchstaben beginnen
@@ -72,7 +84,7 @@ Regeln für Rollennamen:
 
 ## Schritt 3: Proxy-API-Gruppen hinzufügen
 
-Zertifikatsberechtigungen gehören zum Proxy-Funktionsbereich. Fügen Sie die
+Zertifikatberechtigungen gehören zum Proxy-Funktionsbereich. Fügen Sie die
 folgenden API-Gruppen hinzu, um Zugriff auf die Zertifikatverwaltung zu gewähren:
 
 1. Klicken Sie auf **+ Allowed API Groups**
@@ -87,18 +99,21 @@ folgenden API-Gruppen hinzu, um Zugriff auf die Zertifikatverwaltung zu gewähre
 4. Klicken Sie auf **Save**, um die ausgewählten API-Gruppen zu bestätigen
 
 :::note
-Diese Gruppen decken alle proxy-bezogenen Ressourcen ab (HTTP Load Balancer, Origins, Routen, Zertifikate, Zertifikatsketten usw.), nicht nur Zertifikate. F5 XC organisiert Berechtigungen nach Funktionsbereich, nicht nach einzelnem Ressourcentyp.
+Diese Gruppen decken alle proxy-bezogenen Ressourcen ab (HTTP Load Balancer, Origins,
+Routen, Zertifikate, Zertifikatsketten usw.), nicht nur Zertifikate. F5 XC
+organisiert Berechtigungen nach Funktionsbereich, nicht nach einzelnem Ressourcentyp.
 :::
 
 ## Schritt 4: Rolle speichern
 
-Überprüfen Sie die ausgewählten API-Gruppen in der Zusammenfassung und klicken Sie dann auf **Save**, um die Rolle zu erstellen.
+Überprüfen Sie die ausgewählten API-Gruppen in der Zusammenfassung und klicken Sie
+dann auf **Save**, um die Rolle zu erstellen.
 
 ## Schritt 5: Rolle überprüfen
 
 1. Navigieren Sie zu **IAM** &gt; **Roles**
 2. Klicken Sie in der Rollenliste auf **example-cert-admin**
-3. Bestätigen Sie, dass beide API-Gruppen aufgelistet sind
+3. Bestätigen Sie, dass beide API-Gruppen aufgeführt sind
 
 ## Referenzen
 
