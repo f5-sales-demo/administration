@@ -1,7 +1,7 @@
 ---
-title: Ruolo Certificate Admin - API
+title: Ruolo Amministratore Certificati - API
 description: >-
-  Creare un ruolo personalizzato che limita gli utenti alla gestione dei
+  Creare un ruolo personalizzato che limiti gli utenti alla gestione dei
   certificati SSL/TLS tramite API
 sidebar:
   label: Ruolo Personalizzato - API
@@ -10,12 +10,12 @@ i18n:
   translator: machine
 ---
 
-Questa guida illustra come creare un ruolo RBAC personalizzato in F5 Distributed Cloud
-che concede il permesso di gestire i certificati SSL/TLS e le catene di certificati
+Questa guida illustra la creazione di un ruolo RBAC personalizzato in F5 Distributed Cloud
+che concede i permessi per gestire i certificati SSL/TLS e le catene di certificati
 utilizzati dagli HTTP Load Balancer. Per un approccio basato sull'interfaccia utente, consultare la
-[guida semplificata tramite console](./custom-role-ui).
+[guida semplificata per la console](./custom-role-ui).
 
-## Come Funziona l'RBAC di F5 XC
+## Come Funziona il RBAC di F5 XC
 
 F5 XC utilizza un modello di permessi a tre livelli:
 
@@ -29,40 +29,42 @@ api_group_element  (sola lettura, definito dal sistema)
      role           (CRUD completo — questo è ciò che si crea)
 ```
 
-1. **`api_group_element`** — Definisce un percorso regex e metodi HTTP
-   (es., `POST /api/config/.*/certificates`). Gestito dal sistema; non è possibile
-   creare, modificare o eliminare questi elementi.
+1. **`api_group_element`** — Definisce un percorso regex e i metodi HTTP
+   (es. `POST /api/config/.*/certificates`). Gestito dal sistema; non è possibile
+   crearli, modificarli o eliminarli.
 
-2. **`api_group`** — Una raccolta nominata di riferimenti a `api_group_element`,
-   organizzata per area funzionale. Gestita dal sistema; non è possibile creare, modificare o
-   eliminare questi oggetti. I gruppi utilizzano convenzioni di denominazione come `ves-io-proxy-read` o
-   `f5xc-waap-standard-admin`.
+2. **`api_group`** — Una raccolta nominata di riferimenti `api_group_element`,
+   organizzata per area funzionale. Gestito dal sistema; non è possibile crearli,
+   modificarli o eliminarli. I gruppi utilizzano convenzioni di denominazione come
+   `ves-io-proxy-read` o `f5xc-waap-standard-admin`.
 
-3. **`role`** — Fa riferimento ai nomi degli `api_group` in un array. **Questo è l'unico
-   livello che si crea.** Utilizzare gli endpoint dei ruoli personalizzati per associare specifici
-   `api_groups` a un ruolo.
+3. **`role`** — Fa riferimento ai nomi degli `api_group` in un array. **Questo è
+   l'unico livello che si crea.** Utilizzare gli endpoint dei ruoli personalizzati
+   per associare specifici `api_groups` a un ruolo.
 
 Le operazioni sui certificati per gli HTTP Load Balancer sono raggruppate negli
 api_groups `ves-io-proxy-*` insieme ad altre risorse relative al proxy (HTTP Load
-Balancer, route, origini, ecc.). Non esistono api_groups dedicati esclusivamente ai certificati — la piattaforma organizza i permessi per area funzionale, non per
+Balancer, route, origin, ecc.). Non esistono api_groups dedicati esclusivamente
+ai certificati — la piattaforma organizza i permessi per area funzionale, non per
 singolo tipo di risorsa.
 
 ## Ambito e Limitazioni
 
-Gli api_groups `ves-io-proxy-read` e `ves-io-proxy-write` concedono l'accesso a
-**tutte le risorse relative al proxy**, non solo ai certificati. Un utente a cui viene assegnato questo
-ruolo può anche gestire HTTP Load Balancer, origini, route e altri
-oggetti nell'ambito proxy.
+Gli api_groups `ves-io-proxy-read` e `ves-io-proxy-write` concedono accesso a
+**tutte le risorse relative al proxy**, non solo ai certificati. Un utente a cui
+viene assegnato questo ruolo può anche gestire HTTP Load Balancer, origin, route
+e altri oggetti nell'ambito del proxy.
 
-Un RBAC limitato ai soli certificati non è possibile su F5 XC. Sia `api_group` che
-`api_group_element` sono oggetti definiti dal sistema e in sola lettura — l'API espone solo
-endpoint GET per questi. I ruoli possono fare riferimento solo a nomi di `api_group`
-esistenti e non esiste un `api_group` dedicato esclusivamente ai certificati.
+Il RBAC limitato ai soli certificati non è possibile su F5 XC. Sia `api_group` che
+`api_group_element` sono oggetti definiti dal sistema e in sola lettura — l'API
+espone solo endpoint GET per questi. I ruoli possono fare riferimento solo ai nomi
+di `api_group` esistenti e non esiste un `api_group` dedicato esclusivamente ai
+certificati.
 
-**Mitigazione — isolamento del namespace:** Creare un namespace dedicato per
-le risorse dei certificati e assegnare il ruolo `example-cert-admin` con ambito limitato a quel
-namespace specifico. L'utente mantiene i permessi a livello proxy ma non può accedere
-alle risorse in altri namespace, limitando il raggio d'azione dell'ambito più ampio
+**Mitigazione — isolamento tramite namespace:** Creare un namespace dedicato per
+le risorse dei certificati e assegnare il ruolo `example-cert-admin` limitato solo
+a quel namespace. L'utente mantiene i permessi a livello proxy ma non può accedere
+alle risorse in altri namespace, limitando il raggio d'impatto dell'ambito più ampio
 dell'api_group.
 
 ## Prerequisiti
@@ -78,7 +80,7 @@ export F5XC_API_URL="https://${F5XC_TENANT}.console.ves.volterra.io"
 export F5XC_API_TOKEN="your-api-token"
 ```
 
-## Passo 1: Individuare i Proxy API Group
+## Passaggio 1: Scoprire i Gruppi API del Proxy
 
 Elencare tutti gli oggetti `api_group` definiti dal sistema e filtrare le voci
 relative al proxy (che includono i permessi sui certificati):
@@ -107,28 +109,28 @@ Output atteso:
 ]
 ```
 
-Per la gestione dei certificati, i gruppi pertinenti sono:
+Per la gestione dei certificati, i gruppi rilevanti sono:
 
-| API Group | Concede |
+| Gruppo API | Concede |
 | --------- | ------ |
-| `ves-io-proxy-read` | Accesso in lettura alle risorse proxy inclusi i certificati |
-| `ves-io-proxy-write` | Accesso in scrittura alle risorse proxy inclusi i certificati |
+| `ves-io-proxy-read` | Accesso in lettura alle risorse proxy, inclusi i certificati |
+| `ves-io-proxy-write` | Accesso in scrittura alle risorse proxy, inclusi i certificati |
 
 :::note
-Questi gruppi coprono tutte le risorse relative al proxy (HTTP Load Balancer, origini,
+Questi gruppi coprono tutte le risorse relative al proxy (HTTP Load Balancer, origin,
 route, certificati, catene di certificati, ecc.), non solo i certificati. F5 XC
 organizza i permessi per area funzionale. Se è necessario verificare quali percorsi
-API specifici un gruppo concede, consultare l'endpoint `api_group_elements` descritto nella
-sezione Riferimento API.
+API specifici un gruppo concede, consultare l'endpoint `api_group_elements` descritto
+nella sezione Riferimento API.
 :::
 
-## Passo 2: Creare il Ruolo Personalizzato
+## Passaggio 2: Creare il Ruolo Personalizzato
 
-Utilizzare l'endpoint di creazione del ruolo personalizzato. L'array `api_groups` fa riferimento ai
-nomi degli api_group definiti dal sistema individuati nel Passo 1.
+Utilizzare l'endpoint di creazione del ruolo personalizzato. L'array `api_groups`
+fa riferimento ai nomi degli api_group definiti dal sistema scoperti nel Passaggio 1.
 
-Creare il ruolo personalizzato con accesso in lettura e scrittura alle risorse proxy (inclusi
-certificati e catene di certificati):
+Creare il ruolo personalizzato con accesso in lettura e scrittura alle risorse proxy
+(inclusi certificati e catene di certificati):
 
 ```bash
 curl -s -X POST \
@@ -148,10 +150,10 @@ curl -s -X POST \
   }'
 ```
 
-## Passo 3: Verificare il Ruolo
+## Passaggio 3: Verificare il Ruolo
 
-Recuperare il ruolo utilizzando l'endpoint GET personalizzato per confermare che gli `api_groups`
-sono associati:
+Recuperare il ruolo utilizzando l'endpoint GET personalizzato per confermare che gli
+`api_groups` siano associati:
 
 ```bash
 curl -s \
@@ -172,10 +174,10 @@ Output atteso:
 }
 ```
 
-## Passo 4: Aggiornare il Ruolo (Opzionale)
+## Passaggio 4: Aggiornare il Ruolo (Opzionale)
 
-Per aggiungere o rimuovere `api_groups` da un ruolo esistente, utilizzare l'endpoint PUT
-personalizzato:
+Per aggiungere o rimuovere `api_groups` da un ruolo esistente, utilizzare l'endpoint
+PUT personalizzato:
 
 ```bash
 curl -s -X PUT \
@@ -192,10 +194,10 @@ curl -s -X PUT \
   }'
 ```
 
-Questo esempio declassa il ruolo ad accesso in sola lettura rimuovendo
+Questo esempio declassa il ruolo ad accesso di sola lettura rimuovendo
 `ves-io-proxy-write`.
 
-## Passo 5: Eliminare il Ruolo (Opzionale)
+## Passaggio 5: Eliminare il Ruolo (Opzionale)
 
 L'eliminazione utilizza l'endpoint standard dei ruoli:
 
@@ -207,7 +209,7 @@ curl -s -X DELETE \
 
 ## Riferimento API
 
-### Endpoint dei Ruoli (Personalizzati — include `api_groups`)
+### Endpoint dei Ruoli (Personalizzati — includono `api_groups`)
 
 I ruoli si trovano sempre nel namespace `system`.
 
@@ -226,16 +228,16 @@ I ruoli si trovano sempre nel namespace `system`.
 | GET | `/api/web/namespaces/system/roles/{name}` | Ottenere un ruolo |
 | GET | `/api/web/namespaces/system/roles` | Elencare i ruoli |
 
-### Endpoint di Discovery (Sola Lettura)
+### Endpoint di Scoperta (Sola Lettura)
 
-Il discovery utilizza il namespace `shared`.
+La scoperta utilizza il namespace `shared`.
 
 | Metodo | Percorso | Descrizione |
 | ------ | ---- | ----------- |
 | GET | `/api/web/namespaces/shared/api_groups` | Elencare tutti gli api_groups |
 | GET | `/api/web/namespaces/shared/api_group_elements` | Elencare tutti gli api_group_elements |
 
-### Endpoint dei Certificati (A Cosa il Ruolo Concede l'Accesso)
+### Endpoint dei Certificati (Ciò a Cui il Ruolo Concede Accesso)
 
 Sostituire `{namespace}` con il namespace in cui vengono gestiti i certificati.
 
@@ -254,16 +256,16 @@ Sostituire `{namespace}` con il namespace in cui vengono gestiti i certificati.
 
 ## Perché `api_group` e `api_group_element` Sono in Sola Lettura
 
-Questi oggetti sono **definiti dal sistema** da F5 XC. La piattaforma pre-crea
-le voci `api_group_element` per ogni percorso API e le raggruppa in
-oggetti `api_group` organizzati per area funzionale.
+Questi oggetti sono **definiti dal sistema** da F5 XC. La piattaforma crea
+preventivamente le voci `api_group_element` per ogni percorso API e le raggruppa
+in oggetti `api_group` organizzati per area funzionale.
 
-Non è necessario creare questi oggetti — esistono già per ogni risorsa nel
-sistema. Il compito è **individuare** i nomi dei gruppi pertinenti (Passo 1) e
-**fare riferimento** ad essi nel proprio ruolo personalizzato (Passo 2).
+Non è necessario crearli — esistono già per ogni risorsa nel sistema. Il compito
+è **scoprire** i nomi dei gruppi rilevanti (Passaggio 1) e **farvi riferimento**
+nel proprio ruolo personalizzato (Passaggio 2).
 
-Per vedere quali singoli percorsi API un api_group copre, elencare
-l'endpoint `api_group_elements` e cercare gli elementi relativi alla propria risorsa:
+Per vedere quali percorsi API individuali copre un api_group, elencare l'endpoint
+`api_group_elements` e cercare gli elementi relativi alla propria risorsa:
 
 ```bash
 curl -s \

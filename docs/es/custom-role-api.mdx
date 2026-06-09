@@ -1,5 +1,5 @@
 ---
-title: Rol de Administración de Certificados - API
+title: Rol de Administrador de Certificados - API
 description: >-
   Crear un rol personalizado que restrinja a los usuarios a la gestión de
   certificados SSL/TLS mediante API
@@ -10,12 +10,12 @@ i18n:
   translator: machine
 ---
 
-Esta guía explica paso a paso cómo crear un rol RBAC personalizado en F5 Distributed Cloud
-que otorgue permisos para gestionar certificados SSL/TLS y cadenas de certificados
+Esta guía le muestra cómo crear un rol RBAC personalizado en F5 Distributed Cloud
+que otorga permisos para gestionar certificados SSL/TLS y cadenas de certificados
 utilizados por los HTTP Load Balancers. Para un enfoque basado en la interfaz de usuario, consulte la
-[guía simplificada de consola](./custom-role-ui).
+[guía simplificada de la consola](./custom-role-ui).
 
-## Cómo funciona el RBAC de F5 XC
+## Cómo Funciona el RBAC de F5 XC
 
 F5 XC utiliza un modelo de permisos de tres niveles:
 
@@ -30,16 +30,16 @@ api_group_element  (solo lectura, definido por el sistema)
 ```
 
 1. **`api_group_element`** — Define una ruta regex y métodos HTTP
-   (por ejemplo, `POST /api/config/.*/certificates`). Gestionado por el sistema; no puede
-   crear, modificar ni eliminar estos elementos.
+   (ej., `POST /api/config/.*/certificates`). Gestionado por el sistema; no puede
+   crear, modificar ni eliminar estos.
 
 2. **`api_group`** — Una colección nombrada de referencias a `api_group_element`,
    organizada por área funcional. Gestionado por el sistema; no puede crear, modificar ni
-   eliminar estos elementos. Los grupos utilizan convenciones de nomenclatura como `ves-io-proxy-read` o
+   eliminar estos. Los grupos usan convenciones de nomenclatura como `ves-io-proxy-read` o
    `f5xc-waap-standard-admin`.
 
-3. **`role`** — Hace referencia a nombres de `api_group` en un array. **Este es el único
-   nivel que usted crea.** Utilice los endpoints de roles personalizados para asociar
+3. **`role`** — Referencia nombres de `api_group` en un array. **Este es el único
+   nivel que usted crea.** Use los endpoints de roles personalizados para adjuntar
    `api_groups` específicos a un rol.
 
 Las operaciones de certificados para HTTP Load Balancers están agrupadas en los
@@ -48,25 +48,25 @@ Balancers, rutas, orígenes, etc.). No existen api_groups exclusivos para certif
 — la plataforma organiza los permisos por área funcional, no por
 tipo de recurso individual.
 
-## Alcance y limitaciones
+## Alcance y Limitaciones
 
 Los api_groups `ves-io-proxy-read` y `ves-io-proxy-write` otorgan acceso a
 **todos los recursos relacionados con proxy**, no solo a certificados. Un usuario asignado a este
 rol también puede gestionar HTTP Load Balancers, orígenes, rutas y otros
-objetos dentro del alcance de proxy.
+objetos con alcance de proxy.
 
 El RBAC exclusivo para certificados no es posible en F5 XC. Tanto `api_group` como
 `api_group_element` son objetos definidos por el sistema y de solo lectura — la API solo
-expone endpoints GET para estos. Los roles solo pueden hacer referencia a nombres de `api_group`
+expone endpoints GET para estos. Los roles solo pueden referenciar nombres de `api_group`
 existentes, y no existe un `api_group` con alcance exclusivo para certificados.
 
-**Mitigación — aislamiento por namespace:** Cree un namespace dedicado para los
-recursos de certificados y asigne el rol `example-cert-admin` con alcance limitado
-únicamente a ese namespace. El usuario conserva los permisos a nivel de proxy pero no puede acceder
-a recursos en otros namespaces, lo que limita el radio de impacto del alcance
-más amplio del api_group.
+**Mitigación — aislamiento por namespace:** Cree un namespace dedicado para
+los recursos de certificados y asigne el rol `example-cert-admin` con alcance únicamente a ese
+namespace. El usuario conserva los permisos a nivel de proxy pero no puede acceder
+a recursos en otros namespaces, limitando el radio de impacto del alcance más amplio
+del api_group.
 
-## Requisitos previos
+## Requisitos Previos
 
 - Un token de API de F5 XC con privilegios de administrador
 - `curl` y `jq` instalados
@@ -81,7 +81,7 @@ export F5XC_API_TOKEN="your-api-token"
 
 ## Paso 1: Descubrir los API Groups de Proxy
 
-Liste todos los objetos `api_group` definidos por el sistema y filtre las
+Liste todos los objetos `api_group` definidos por el sistema y filtre por las
 entradas relacionadas con proxy (que incluyen permisos de certificados):
 
 ```bash
@@ -125,7 +125,7 @@ la sección de Referencia de API.
 
 ## Paso 2: Crear el Rol Personalizado
 
-Utilice el endpoint de creación de roles personalizados. El array `api_groups` hace referencia a los
+Use el endpoint de creación de roles personalizados. El array `api_groups` referencia los
 nombres de api_group definidos por el sistema descubiertos en el Paso 1.
 
 Cree el rol personalizado con acceso de lectura y escritura a recursos de proxy (incluyendo
@@ -151,8 +151,8 @@ curl -s -X POST \
 
 ## Paso 3: Verificar el Rol
 
-Recupere el rol utilizando el endpoint GET personalizado para confirmar que los `api_groups`
-están asociados:
+Recupere el rol usando el endpoint GET personalizado para confirmar que los `api_groups`
+están adjuntos:
 
 ```bash
 curl -s \
@@ -175,7 +175,7 @@ Salida esperada:
 
 ## Paso 4: Actualizar el Rol (Opcional)
 
-Para agregar o eliminar `api_groups` de un rol existente, utilice el endpoint PUT
+Para agregar o eliminar `api_groups` de un rol existente, use el endpoint PUT
 personalizado:
 
 ```bash
@@ -193,12 +193,12 @@ curl -s -X PUT \
   }'
 ```
 
-Este ejemplo reduce el rol a acceso de solo lectura eliminando
+Este ejemplo degrada el rol a acceso de solo lectura eliminando
 `ves-io-proxy-write`.
 
 ## Paso 5: Eliminar el Rol (Opcional)
 
-La eliminación utiliza el endpoint estándar de roles:
+La eliminación usa el endpoint estándar de roles:
 
 ```bash
 curl -s -X DELETE \
@@ -229,7 +229,7 @@ Los roles siempre están en el namespace `system`.
 
 ### Endpoints de Descubrimiento (Solo Lectura)
 
-El descubrimiento utiliza el namespace `shared`.
+El descubrimiento usa el namespace `shared`.
 
 | Método | Ruta | Descripción |
 | ------ | ---- | ----------- |
@@ -253,7 +253,7 @@ Reemplace `{namespace}` con el namespace donde se gestionan sus certificados.
 | PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | Reemplazar una cadena de certificados |
 | DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | Eliminar una cadena de certificados |
 
-## Por qué `api_group` y `api_group_element` son de Solo Lectura
+## Por Qué `api_group` y `api_group_element` Son de Solo Lectura
 
 Estos objetos están **definidos por el sistema** por F5 XC. La plataforma pre-crea
 entradas de `api_group_element` para cada ruta de API y las agrupa en
