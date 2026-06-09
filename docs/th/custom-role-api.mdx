@@ -1,73 +1,72 @@
 ---
-title: Certificate Admin Role - API
-description: >-
-  Create a custom role restricting users to SSL/TLS certificate management via
-  API
+title: บทบาทผู้ดูแลใบรับรอง - API
+description: สร้างบทบาทแบบกำหนดเองเพื่อจำกัดสิทธิ์ผู้ใช้ให้จัดการใบรับรอง SSL/TLS ผ่าน API
 sidebar:
-  label: Custom Role - API
+  label: บทบาทแบบกำหนดเอง - API
 i18n:
   sourceHash: a4031b2a23ae
   translator: machine
 ---
 
-คู่มือนี้จะอธิบายขั้นตอนการสร้าง custom RBAC role ใน F5 Distributed Cloud
-ที่ให้สิทธิ์ในการจัดการใบรับรอง SSL/TLS และ certificate chain
-ที่ใช้โดย HTTP Load Balancer สำหรับวิธีการผ่าน UI โปรดดู
-[คู่มือคอนโซลแบบย่อ](./custom-role-ui)
+คู่มือนี้จะแนะนำขั้นตอนการสร้างบทบาท RBAC แบบกำหนดเองใน F5 Distributed Cloud
+ที่ให้สิทธิ์ในการจัดการใบรับรอง SSL/TLS และสายใบรับรอง (certificate chains)
+ที่ใช้โดย HTTP Load Balancers สำหรับแนวทางผ่าน UI สามารถดูได้ที่
+[คู่มือคอนโซลแบบง่าย](./custom-role-ui)
 
 ## วิธีการทำงานของ F5 XC RBAC
 
 F5 XC ใช้โมเดลสิทธิ์แบบสามระดับ:
 
 ```
-api_group_element  (read-only, system-defined)
+api_group_element  (อ่านอย่างเดียว, กำหนดโดยระบบ)
        │
        ▼
-   api_group       (read-only, system-defined)
+   api_group       (อ่านอย่างเดียว, กำหนดโดยระบบ)
        │
        ▼
-     role           (full CRUD — this is what you create)
+     role           (CRUD เต็มรูปแบบ — นี่คือสิ่งที่คุณสร้าง)
 ```
 
-1. **`api_group_element`** — กำหนด regex path และ HTTP method
-   (เช่น `POST /api/config/.*/certificates`) เป็นออบเจกต์ที่จัดการโดยระบบ คุณไม่สามารถ
-   สร้าง แก้ไข หรือลบได้
+1. **`api_group_element`** — กำหนดเส้นทาง regex และ HTTP methods
+   (เช่น `POST /api/config/.*/certificates`) จัดการโดยระบบ; คุณไม่สามารถ
+   สร้าง แก้ไข หรือลบสิ่งเหล่านี้ได้
 
-2. **`api_group`** — คอลเลกชันที่มีชื่อของ `api_group_element` references
-   จัดระเบียบตามพื้นที่การทำงาน เป็นออบเจกต์ที่จัดการโดยระบบ คุณไม่สามารถสร้าง แก้ไข หรือ
-   ลบได้ กลุ่มใช้หลักการตั้งชื่อเช่น `ves-io-proxy-read` หรือ
+2. **`api_group`** — คอลเลกชันที่มีชื่อของการอ้างอิง `api_group_element`
+   จัดระเบียบตามพื้นที่การทำงาน จัดการโดยระบบ; คุณไม่สามารถสร้าง แก้ไข หรือ
+   ลบสิ่งเหล่านี้ได้ กลุ่มใช้แบบแผนการตั้งชื่อเช่น `ves-io-proxy-read` หรือ
    `f5xc-waap-standard-admin`
 
-3. **`role`** — อ้างอิงชื่อ `api_group` ในอาร์เรย์ **นี่คือระดับเดียวที่คุณสร้างขึ้น** ใช้ custom role endpoint เพื่อแนบ
-   `api_groups` เฉพาะเข้ากับ role
+3. **`role`** — อ้างอิงชื่อ `api_group` ในอาร์เรย์ **นี่คือระดับเดียว
+   ที่คุณสร้าง** ใช้ endpoint ของบทบาทแบบกำหนดเองเพื่อแนบ
+   `api_groups` เฉพาะเข้ากับบทบาท
 
-การดำเนินการเกี่ยวกับใบรับรองสำหรับ HTTP Load Balancer ถูกรวมอยู่ใน
-`ves-io-proxy-*` api_groups ร่วมกับทรัพยากรที่เกี่ยวข้องกับ proxy อื่นๆ (HTTP Load
-Balancer, route, origin ฯลฯ) ไม่มี api_group เฉพาะสำหรับใบรับรองเพียงอย่างเดียว — แพลตฟอร์มจัดระเบียบสิทธิ์ตามพื้นที่การทำงาน ไม่ใช่ตามประเภททรัพยากรแต่ละรายการ
+การดำเนินการเกี่ยวกับใบรับรองสำหรับ HTTP Load Balancers ถูกรวมอยู่ใน
+api_groups `ves-io-proxy-*` ร่วมกับทรัพยากรที่เกี่ยวข้องกับ proxy อื่นๆ (HTTP Load
+Balancers, routes, origins ฯลฯ) ไม่มี api_groups เฉพาะสำหรับใบรับรองเพียงอย่างเดียว — แพลตฟอร์มจัดระเบียบสิทธิ์ตามพื้นที่การทำงาน ไม่ใช่ตามประเภททรัพยากรแต่ละรายการ
 
 ## ขอบเขตและข้อจำกัด
 
-`ves-io-proxy-read` และ `ves-io-proxy-write` api_groups ให้สิทธิ์เข้าถึง
-**ทรัพยากรที่เกี่ยวข้องกับ proxy ทั้งหมด** ไม่ใช่เฉพาะใบรับรอง ผู้ใช้ที่ได้รับมอบหมาย role นี้
-สามารถจัดการ HTTP Load Balancer, origin, route และออบเจกต์อื่นๆ
-ในขอบเขต proxy ได้ด้วย
+api_groups `ves-io-proxy-read` และ `ves-io-proxy-write` ให้สิทธิ์เข้าถึง
+**ทรัพยากรที่เกี่ยวข้องกับ proxy ทั้งหมด** ไม่ใช่เฉพาะใบรับรอง ผู้ใช้ที่ได้รับมอบหมายบทบาทนี้
+สามารถจัดการ HTTP Load Balancers, origins, routes และอ็อบเจกต์ในขอบเขต proxy
+อื่นๆ ได้เช่นกัน
 
-RBAC เฉพาะใบรับรองเท่านั้นไม่สามารถทำได้บน F5 XC ทั้ง `api_group` และ
-`api_group_element` เป็นออบเจกต์ที่กำหนดโดยระบบและเป็นแบบอ่านอย่างเดียว — API เปิดเผยเฉพาะ GET endpoint สำหรับสิ่งเหล่านี้ Role สามารถอ้างอิงเฉพาะชื่อ `api_group`
-ที่มีอยู่แล้ว และไม่มี `api_group` ที่ครอบคลุมเฉพาะใบรับรองเท่านั้น
+RBAC เฉพาะใบรับรองไม่สามารถทำได้บน F5 XC ทั้ง `api_group` และ
+`api_group_element` เป็นอ็อบเจกต์ที่กำหนดโดยระบบและอ่านอย่างเดียว — API เปิดเผย
+เฉพาะ GET endpoints สำหรับสิ่งเหล่านี้ บทบาทสามารถอ้างอิงชื่อ `api_group`
+ที่มีอยู่เท่านั้น และไม่มี `api_group` ที่กำหนดขอบเขตเฉพาะสำหรับใบรับรอง
 
 **การบรรเทา — การแยก namespace:** สร้าง namespace เฉพาะสำหรับ
-ทรัพยากรใบรับรองและมอบหมาย role `example-cert-admin` ที่กำหนดขอบเขตเฉพาะ
+ทรัพยากรใบรับรองและมอบหมายบทบาท `example-cert-admin` ที่กำหนดขอบเขตเฉพาะ
 namespace นั้นเท่านั้น ผู้ใช้ยังคงมีสิทธิ์ระดับ proxy แต่ไม่สามารถเข้าถึง
-ทรัพยากรใน namespace อื่นได้ ซึ่งจำกัดผลกระทบของขอบเขต
-api_group ที่กว้าง
+ทรัพยากรใน namespace อื่นๆ ซึ่งจำกัดผลกระทบจากขอบเขต api_group ที่กว้างกว่า
 
 ## ข้อกำหนดเบื้องต้น
 
 - API token ของ F5 XC ที่มีสิทธิ์ admin
 - ติดตั้ง `curl` และ `jq` แล้ว
 
-ตั้งค่าตัวแปร environment:
+ตั้งค่าตัวแปรสภาพแวดล้อมของคุณ:
 
 ```bash
 export F5XC_TENANT="your-tenant"
@@ -77,8 +76,8 @@ export F5XC_API_TOKEN="your-api-token"
 
 ## ขั้นตอนที่ 1: ค้นหา Proxy API Groups
 
-แสดงรายการออบเจกต์ `api_group` ที่กำหนดโดยระบบทั้งหมดและกรองเฉพาะ
-รายการที่เกี่ยวข้องกับ proxy (ซึ่งรวมสิทธิ์ใบรับรอง):
+แสดงรายการอ็อบเจกต์ `api_group` ที่กำหนดโดยระบบทั้งหมดและกรองรายการที่เกี่ยวข้องกับ proxy
+(ซึ่งรวมถึงสิทธิ์ใบรับรอง):
 
 ```bash
 curl -s \
@@ -106,26 +105,26 @@ curl -s \
 
 สำหรับการจัดการใบรับรอง กลุ่มที่เกี่ยวข้องคือ:
 
-| API Group | สิทธิ์ที่ได้รับ |
+| API Group | สิทธิ์ที่ให้ |
 | --------- | ------ |
 | `ves-io-proxy-read` | สิทธิ์อ่านทรัพยากร proxy รวมถึงใบรับรอง |
 | `ves-io-proxy-write` | สิทธิ์เขียนทรัพยากร proxy รวมถึงใบรับรอง |
 
 :::note
-กลุ่มเหล่านี้ครอบคลุมทรัพยากรที่เกี่ยวข้องกับ proxy ทั้งหมด (HTTP Load Balancer, origin,
-route, ใบรับรอง, certificate chain ฯลฯ) ไม่ใช่เฉพาะใบรับรอง F5 XC
-จัดระเบียบสิทธิ์ตามพื้นที่การทำงาน หากคุณต้องการตรวจสอบว่า
-API path เฉพาะใดบ้างที่กลุ่มให้สิทธิ์ ให้ตรวจสอบ endpoint `api_group_elements` ที่อธิบายใน
-ส่วน API Reference
+กลุ่มเหล่านี้ครอบคลุมทรัพยากรที่เกี่ยวข้องกับ proxy ทั้งหมด (HTTP Load Balancers, origins,
+routes, ใบรับรอง, สายใบรับรอง ฯลฯ) ไม่ใช่เฉพาะใบรับรอง F5 XC
+จัดระเบียบสิทธิ์ตามพื้นที่การทำงาน หากคุณต้องการตรวจสอบว่ากลุ่มให้สิทธิ์
+เส้นทาง API เฉพาะใดบ้าง ให้ตรวจสอบ endpoint `api_group_elements` ที่อธิบายไว้ใน
+ส่วนอ้างอิง API
 :::
 
-## ขั้นตอนที่ 2: สร้าง Custom Role
+## ขั้นตอนที่ 2: สร้างบทบาทแบบกำหนดเอง
 
-ใช้ endpoint สำหรับสร้าง custom role อาร์เรย์ `api_groups` อ้างอิงชื่อ
-api_group ที่กำหนดโดยระบบซึ่งค้นพบในขั้นตอนที่ 1
+ใช้ endpoint สำหรับสร้างบทบาทแบบกำหนดเอง อาร์เรย์ `api_groups` อ้างอิง
+ชื่อ api_group ที่กำหนดโดยระบบซึ่งค้นพบในขั้นตอนที่ 1
 
-สร้าง custom role ที่มีสิทธิ์อ่านและเขียนทรัพยากร proxy (รวมถึง
-ใบรับรองและ certificate chain):
+สร้างบทบาทแบบกำหนดเองที่มีสิทธิ์อ่านและเขียนทรัพยากร proxy (รวมถึง
+ใบรับรองและสายใบรับรอง):
 
 ```bash
 curl -s -X POST \
@@ -145,9 +144,9 @@ curl -s -X POST \
   }'
 ```
 
-## ขั้นตอนที่ 3: ตรวจสอบ Role
+## ขั้นตอนที่ 3: ตรวจสอบบทบาท
 
-ดึงข้อมูล role โดยใช้ custom GET endpoint เพื่อยืนยันว่า `api_groups`
+ดึงข้อมูลบทบาทโดยใช้ custom GET endpoint เพื่อยืนยันว่า `api_groups`
 ถูกแนบแล้ว:
 
 ```bash
@@ -169,9 +168,9 @@ curl -s \
 }
 ```
 
-## ขั้นตอนที่ 4: อัปเดต Role (ทางเลือก)
+## ขั้นตอนที่ 4: อัปเดตบทบาท (ไม่บังคับ)
 
-เพื่อเพิ่มหรือลบ `api_groups` จาก role ที่มีอยู่ ใช้ custom PUT
+เพื่อเพิ่มหรือลบ `api_groups` จากบทบาทที่มีอยู่ ให้ใช้ custom PUT
 endpoint:
 
 ```bash
@@ -189,12 +188,12 @@ curl -s -X PUT \
   }'
 ```
 
-ตัวอย่างนี้ลดระดับ role เป็นสิทธิ์อ่านอย่างเดียวโดยลบ
-`ves-io-proxy-write`
+ตัวอย่างนี้ลดระดับบทบาทเป็นสิทธิ์อ่านอย่างเดียวโดยลบ
+`ves-io-proxy-write` ออก
 
-## ขั้นตอนที่ 5: ลบ Role (ทางเลือก)
+## ขั้นตอนที่ 5: ลบบทบาท (ไม่บังคับ)
 
-การลบใช้ standard role endpoint:
+การลบใช้ endpoint บทบาทมาตรฐาน:
 
 ```bash
 curl -s -X DELETE \
@@ -202,65 +201,65 @@ curl -s -X DELETE \
   "${F5XC_API_URL}/api/web/namespaces/system/roles/example-cert-admin"
 ```
 
-## API Reference
+## อ้างอิง API
 
-### Role Endpoint (Custom — รวม `api_groups`)
+### Endpoint ของบทบาท (แบบกำหนดเอง — รวม `api_groups`)
 
-Role อยู่ใน namespace `system` เสมอ
+บทบาทจะอยู่ใน namespace `system` เสมอ
 
-| Method | Path | คำอธิบาย |
+| Method | เส้นทาง | คำอธิบาย |
 | ------ | ---- | ----------- |
-| POST | `/api/web/custom/namespaces/system/roles` | สร้าง custom role |
-| GET | `/api/web/custom/namespaces/system/roles` | แสดงรายการ custom role |
-| GET | `/api/web/custom/namespaces/system/roles/{name}` | ดึงข้อมูล custom role |
-| PUT | `/api/web/custom/namespaces/system/roles/{name}` | แทนที่ custom role |
+| POST | `/api/web/custom/namespaces/system/roles` | สร้างบทบาทแบบกำหนดเอง |
+| GET | `/api/web/custom/namespaces/system/roles` | แสดงรายการบทบาทแบบกำหนดเอง |
+| GET | `/api/web/custom/namespaces/system/roles/{name}` | ดึงข้อมูลบทบาทแบบกำหนดเอง |
+| PUT | `/api/web/custom/namespaces/system/roles/{name}` | แทนที่บทบาทแบบกำหนดเอง |
 
-### Role Endpoint (Standard)
+### Endpoint ของบทบาท (มาตรฐาน)
 
-| Method | Path | คำอธิบาย |
+| Method | เส้นทาง | คำอธิบาย |
 | ------ | ---- | ----------- |
-| DELETE | `/api/web/namespaces/system/roles/{name}` | ลบ role |
-| GET | `/api/web/namespaces/system/roles/{name}` | ดึงข้อมูล role |
-| GET | `/api/web/namespaces/system/roles` | แสดงรายการ role |
+| DELETE | `/api/web/namespaces/system/roles/{name}` | ลบบทบาท |
+| GET | `/api/web/namespaces/system/roles/{name}` | ดึงข้อมูลบทบาท |
+| GET | `/api/web/namespaces/system/roles` | แสดงรายการบทบาท |
 
-### Discovery Endpoint (อ่านอย่างเดียว)
+### Endpoint สำหรับค้นหา (อ่านอย่างเดียว)
 
-Discovery ใช้ namespace `shared`
+การค้นหาใช้ namespace `shared`
 
-| Method | Path | คำอธิบาย |
+| Method | เส้นทาง | คำอธิบาย |
 | ------ | ---- | ----------- |
-| GET | `/api/web/namespaces/shared/api_groups` | แสดงรายการ api_group ทั้งหมด |
-| GET | `/api/web/namespaces/shared/api_group_elements` | แสดงรายการ api_group_element ทั้งหมด |
+| GET | `/api/web/namespaces/shared/api_groups` | แสดงรายการ api_groups ทั้งหมด |
+| GET | `/api/web/namespaces/shared/api_group_elements` | แสดงรายการ api_group_elements ทั้งหมด |
 
-### Certificate Endpoint (สิ่งที่ Role ให้สิทธิ์เข้าถึง)
+### Endpoint ของใบรับรอง (สิ่งที่บทบาทให้สิทธิ์เข้าถึง)
 
 แทนที่ `{namespace}` ด้วย namespace ที่ใบรับรองของคุณถูกจัดการ
 
-| Method | Path | คำอธิบาย |
+| Method | เส้นทาง | คำอธิบาย |
 | ------ | ---- | ----------- |
 | POST | `/api/config/namespaces/{namespace}/certificates` | สร้างใบรับรอง |
 | GET | `/api/config/namespaces/{namespace}/certificates` | แสดงรายการใบรับรอง |
 | GET | `/api/config/namespaces/{namespace}/certificates/{name}` | ดึงข้อมูลใบรับรอง |
 | PUT | `/api/config/namespaces/{namespace}/certificates/{name}` | แทนที่ใบรับรอง |
 | DELETE | `/api/config/namespaces/{namespace}/certificates/{name}` | ลบใบรับรอง |
-| POST | `/api/config/namespaces/{namespace}/certificate_chains` | สร้าง certificate chain |
-| GET | `/api/config/namespaces/{namespace}/certificate_chains` | แสดงรายการ certificate chain |
-| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | ดึงข้อมูล certificate chain |
-| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | แทนที่ certificate chain |
-| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | ลบ certificate chain |
+| POST | `/api/config/namespaces/{namespace}/certificate_chains` | สร้างสายใบรับรอง |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains` | แสดงรายการสายใบรับรอง |
+| GET | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | ดึงข้อมูลสายใบรับรอง |
+| PUT | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | แทนที่สายใบรับรอง |
+| DELETE | `/api/config/namespaces/{namespace}/certificate_chains/{name}` | ลบสายใบรับรอง |
 
-## ทำไม `api_group` และ `api_group_element` จึงเป็นแบบอ่านอย่างเดียว
+## เหตุใด `api_group` และ `api_group_element` จึงเป็นแบบอ่านอย่างเดียว
 
-ออบเจกต์เหล่านี้ถูก**กำหนดโดยระบบ**ของ F5 XC แพลตฟอร์มสร้าง
-รายการ `api_group_element` สำหรับทุก API path ล่วงหน้าและจัดกลุ่มไว้ใน
-ออบเจกต์ `api_group` ที่จัดระเบียบตามพื้นที่การทำงาน
+อ็อบเจกต์เหล่านี้ถูก**กำหนดโดยระบบ**ของ F5 XC แพลตฟอร์มสร้าง
+รายการ `api_group_element` ล่วงหน้าสำหรับทุกเส้นทาง API และจัดกลุ่มเป็น
+อ็อบเจกต์ `api_group` ที่จัดระเบียบตามพื้นที่การทำงาน
 
-คุณไม่จำเป็นต้องสร้างสิ่งเหล่านี้ — มันมีอยู่แล้วสำหรับทุกทรัพยากรในระบบ
-หน้าที่ของคุณคือ**ค้นหา**ชื่อกลุ่มที่เกี่ยวข้อง (ขั้นตอนที่ 1) และ
-**อ้างอิง**ชื่อเหล่านั้นใน custom role ของคุณ (ขั้นตอนที่ 2)
+คุณไม่จำเป็นต้องสร้างสิ่งเหล่านี้ — มันมีอยู่แล้วสำหรับทุกทรัพยากรใน
+ระบบ หน้าที่ของคุณคือ**ค้นหา**ชื่อกลุ่มที่เกี่ยวข้อง (ขั้นตอนที่ 1) และ
+**อ้างอิง**ในบทบาทแบบกำหนดเองของคุณ (ขั้นตอนที่ 2)
 
-เพื่อดูว่า API path แต่ละรายการใดบ้างที่ api_group ครอบคลุม ให้แสดงรายการจาก
-endpoint `api_group_elements` และมองหา element ที่เกี่ยวข้องกับทรัพยากรของคุณ:
+เพื่อดูว่า api_group ครอบคลุมเส้นทาง API แต่ละรายการใดบ้าง ให้แสดงรายการ
+endpoint `api_group_elements` และค้นหาองค์ประกอบที่เกี่ยวข้องกับทรัพยากรของคุณ:
 
 ```bash
 curl -s \

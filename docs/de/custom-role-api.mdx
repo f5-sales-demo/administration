@@ -2,7 +2,7 @@
 title: Zertifikatsverwaltungsrolle - API
 description: >-
   Erstellen einer benutzerdefinierten Rolle zur Beschränkung von Benutzern auf
-  SSL/TLS-Zertifikatsverwaltung via API
+  die SSL/TLS-Zertifikatsverwaltung über die API
 sidebar:
   label: Benutzerdefinierte Rolle - API
 i18n:
@@ -10,12 +10,12 @@ i18n:
   translator: machine
 ---
 
-Diese Anleitung führt durch die Erstellung einer benutzerdefinierten RBAC-Rolle in F5 Distributed Cloud,
+Diese Anleitung führt Sie durch die Erstellung einer benutzerdefinierten RBAC-Rolle in F5 Distributed Cloud,
 die Berechtigungen zur Verwaltung von SSL/TLS-Zertifikaten und Zertifikatsketten
 für HTTP Load Balancer gewährt. Für einen UI-basierten Ansatz siehe die
-[vereinfachte Konsolenanleitung](./custom-role-ui).
+[vereinfachte Konsolen-Anleitung](./custom-role-ui).
 
-## Wie F5 XC RBAC funktioniert
+## Funktionsweise von F5 XC RBAC
 
 F5 XC verwendet ein dreistufiges Berechtigungsmodell:
 
@@ -34,41 +34,37 @@ api_group_element  (schreibgeschützt, systemdefiniert)
    diese nicht erstellen, ändern oder löschen.
 
 2. **`api_group`** — Eine benannte Sammlung von `api_group_element`-Referenzen,
-   organisiert nach Funktionsbereich. Systemverwaltet; Sie können diese nicht
-   erstellen, ändern oder löschen. Gruppen verwenden Namenskonventionen wie
-   `ves-io-proxy-read` oder `f5xc-waap-standard-admin`.
+   organisiert nach Funktionsbereich. Systemverwaltet; Sie können diese nicht erstellen, ändern oder
+   löschen. Gruppen verwenden Namenskonventionen wie `ves-io-proxy-read` oder
+   `f5xc-waap-standard-admin`.
 
-3. **`role`** — Referenziert `api_group`-Namen in einem Array. **Dies ist die
-   einzige Stufe, die Sie erstellen.** Verwenden Sie die Endpunkte für
-   benutzerdefinierte Rollen, um bestimmte `api_groups` einer Rolle zuzuweisen.
+3. **`role`** — Referenziert `api_group`-Namen in einem Array. **Dies ist die einzige
+   Stufe, die Sie erstellen.** Verwenden Sie die Endpunkte für benutzerdefinierte Rollen, um bestimmte
+   `api_groups` einer Rolle zuzuweisen.
 
-Zertifikatsoperationen für HTTP Load Balancer sind zusammen mit anderen
-proxy-bezogenen Ressourcen (HTTP Load Balancer, Routen, Origins usw.) in den
-`ves-io-proxy-*` api_groups gebündelt. Es gibt keine eigenständigen,
-ausschließlich auf Zertifikate beschränkten api_groups — die Plattform
-organisiert Berechtigungen nach Funktionsbereich, nicht nach einzelnem
-Ressourcentyp.
+Zertifikatsoperationen für HTTP Load Balancer sind in den
+`ves-io-proxy-*` api_groups zusammen mit anderen proxy-bezogenen Ressourcen gebündelt (HTTP Load
+Balancer, Routen, Origins usw.). Es gibt keine eigenständigen, ausschließlich auf Zertifikate beschränkten
+api_groups — die Plattform organisiert Berechtigungen nach Funktionsbereich, nicht nach
+einzelnem Ressourcentyp.
 
-## Geltungsbereich und Einschränkungen
+## Umfang und Einschränkungen
 
-Die api_groups `ves-io-proxy-read` und `ves-io-proxy-write` gewähren Zugriff
-auf **alle proxy-bezogenen Ressourcen**, nicht nur auf Zertifikate. Ein
-Benutzer mit dieser Rolle kann auch HTTP Load Balancer, Origins, Routen und
-andere proxy-bezogene Objekte verwalten.
+Die api_groups `ves-io-proxy-read` und `ves-io-proxy-write` gewähren Zugriff auf
+**alle proxy-bezogenen Ressourcen**, nicht nur auf Zertifikate. Ein Benutzer, dem diese
+Rolle zugewiesen wird, kann auch HTTP Load Balancer, Origins, Routen und andere
+proxy-bezogene Objekte verwalten.
 
-Eine ausschließlich auf Zertifikate beschränkte RBAC-Konfiguration ist auf
-F5 XC nicht möglich. Sowohl `api_group` als auch `api_group_element` sind
-systemdefinierte, schreibgeschützte Objekte — die API stellt für diese nur
-GET-Endpunkte bereit. Rollen können nur auf bestehende `api_group`-Namen
-verweisen, und es gibt keine `api_group`, die ausschließlich auf Zertifikate
-beschränkt ist.
+Eine ausschließlich auf Zertifikate beschränkte RBAC ist in F5 XC nicht möglich. Sowohl `api_group` als auch
+`api_group_element` sind systemdefinierte, schreibgeschützte Objekte — die API stellt für diese
+nur GET-Endpunkte bereit. Rollen können nur auf vorhandene `api_group`-Namen
+verweisen, und es gibt keine `api_group`, die ausschließlich auf Zertifikate beschränkt ist.
 
-**Abhilfe — Namespace-Isolation:** Erstellen Sie einen dedizierten Namespace
-für Zertifikatsressourcen und weisen Sie die Rolle `example-cert-admin` zu,
-die ausschließlich auf diesen Namespace beschränkt ist. Der Benutzer behält
-Berechtigungen auf Proxy-Ebene, kann aber nicht auf Ressourcen in anderen
-Namespaces zugreifen, wodurch der Wirkungsradius des breiteren
-api_group-Geltungsbereichs begrenzt wird.
+**Abhilfe — Namespace-Isolation:** Erstellen Sie einen dedizierten Namespace für
+Zertifikatsressourcen und weisen Sie die Rolle `example-cert-admin` nur für diesen
+Namespace zu. Der Benutzer behält Proxy-Level-Berechtigungen, kann aber nicht auf
+Ressourcen in anderen Namespaces zugreifen, wodurch der Wirkungsradius des breiteren
+api_group-Umfangs begrenzt wird.
 
 ## Voraussetzungen
 
@@ -85,8 +81,8 @@ export F5XC_API_TOKEN="your-api-token"
 
 ## Schritt 1: Proxy-API-Gruppen ermitteln
 
-Listen Sie alle systemdefinierten `api_group`-Objekte auf und filtern Sie nach
-proxy-bezogenen Einträgen (die Zertifikatsberechtigungen enthalten):
+Listen Sie alle systemdefinierten `api_group`-Objekte auf und filtern Sie nach proxy-bezogenen
+Einträgen (die Zertifikatsberechtigungen enthalten):
 
 ```bash
 curl -s \
@@ -116,26 +112,24 @@ Für die Zertifikatsverwaltung sind folgende Gruppen relevant:
 
 | API-Gruppe | Gewährt |
 | --------- | ------ |
-| `ves-io-proxy-read` | Lesezugriff auf Proxy-Ressourcen einschließlich Zertifikaten |
-| `ves-io-proxy-write` | Schreibzugriff auf Proxy-Ressourcen einschließlich Zertifikaten |
+| `ves-io-proxy-read` | Lesezugriff auf Proxy-Ressourcen einschließlich Zertifikate |
+| `ves-io-proxy-write` | Schreibzugriff auf Proxy-Ressourcen einschließlich Zertifikate |
 
 :::note
-Diese Gruppen decken alle proxy-bezogenen Ressourcen ab (HTTP Load Balancer,
-Origins, Routen, Zertifikate, Zertifikatsketten usw.), nicht nur Zertifikate.
-F5 XC organisiert Berechtigungen nach Funktionsbereich. Wenn Sie überprüfen
-möchten, welche spezifischen API-Pfade eine Gruppe gewährt, konsultieren Sie
-den `api_group_elements`-Endpunkt, der im Abschnitt API-Referenz beschrieben
-ist.
+Diese Gruppen decken alle proxy-bezogenen Ressourcen ab (HTTP Load Balancer, Origins,
+Routen, Zertifikate, Zertifikatsketten usw.), nicht nur Zertifikate. F5 XC
+organisiert Berechtigungen nach Funktionsbereich. Wenn Sie überprüfen möchten, welche spezifischen
+API-Pfade eine Gruppe gewährt, prüfen Sie den `api_group_elements`-Endpunkt, der im
+Abschnitt API-Referenz beschrieben wird.
 :::
 
 ## Schritt 2: Die benutzerdefinierte Rolle erstellen
 
-Verwenden Sie den Endpunkt zur Erstellung benutzerdefinierter Rollen. Das
-`api_groups`-Array referenziert die in Schritt 1 ermittelten systemdefinierten
-api_group-Namen.
+Verwenden Sie den Endpunkt zur Erstellung benutzerdefinierter Rollen. Das `api_groups`-Array referenziert die
+in Schritt 1 ermittelten systemdefinierten api_group-Namen.
 
-Erstellen Sie die benutzerdefinierte Rolle mit Lese- und Schreibzugriff auf
-Proxy-Ressourcen (einschließlich Zertifikaten und Zertifikatsketten):
+Erstellen Sie die benutzerdefinierte Rolle mit Lese- und Schreibzugriff auf Proxy-Ressourcen (einschließlich
+Zertifikate und Zertifikatsketten):
 
 ```bash
 curl -s -X POST \
@@ -157,8 +151,8 @@ curl -s -X POST \
 
 ## Schritt 3: Die Rolle überprüfen
 
-Rufen Sie die Rolle über den benutzerdefinierten GET-Endpunkt ab, um zu
-bestätigen, dass die `api_groups` zugewiesen sind:
+Rufen Sie die Rolle über den benutzerdefinierten GET-Endpunkt ab, um zu bestätigen, dass die `api_groups`
+zugewiesen sind:
 
 ```bash
 curl -s \
@@ -181,8 +175,7 @@ Erwartete Ausgabe:
 
 ## Schritt 4: Die Rolle aktualisieren (Optional)
 
-Um `api_groups` einer bestehenden Rolle hinzuzufügen oder zu entfernen,
-verwenden Sie den benutzerdefinierten PUT-Endpunkt:
+Um `api_groups` zu einer bestehenden Rolle hinzuzufügen oder zu entfernen, verwenden Sie den benutzerdefinierten PUT-Endpunkt:
 
 ```bash
 curl -s -X PUT \
@@ -261,18 +254,16 @@ Ersetzen Sie `{namespace}` durch den Namespace, in dem Ihre Zertifikate verwalte
 
 ## Warum `api_group` und `api_group_element` schreibgeschützt sind
 
-Diese Objekte sind von F5 XC **systemdefiniert**. Die Plattform erstellt
-vorab `api_group_element`-Einträge für jeden API-Pfad und gruppiert sie in
-`api_group`-Objekte, die nach Funktionsbereich organisiert sind.
+Diese Objekte sind **systemdefiniert** durch F5 XC. Die Plattform erstellt vorab
+`api_group_element`-Einträge für jeden API-Pfad und gruppiert sie in
+`api_group`-Objekte, organisiert nach Funktionsbereich.
 
-Sie müssen diese nicht erstellen — sie existieren bereits für jede Ressource
-im System. Ihre Aufgabe besteht darin, die relevanten Gruppennamen zu
-**ermitteln** (Schritt 1) und sie in Ihrer benutzerdefinierten Rolle zu
-**referenzieren** (Schritt 2).
+Sie müssen diese nicht erstellen — sie existieren bereits für jede Ressource im
+System. Ihre Aufgabe ist es, die relevanten Gruppennamen zu **ermitteln** (Schritt 1) und
+sie in Ihrer benutzerdefinierten Rolle zu **referenzieren** (Schritt 2).
 
-Um zu sehen, welche einzelnen API-Pfade eine api_group abdeckt, listen Sie
-den `api_group_elements`-Endpunkt auf und suchen Sie nach Elementen, die mit
-Ihrer Ressource zusammenhängen:
+Um zu sehen, welche einzelnen API-Pfade eine api_group abdeckt, listen Sie den
+`api_group_elements`-Endpunkt auf und suchen Sie nach Elementen, die mit Ihrer Ressource zusammenhängen:
 
 ```bash
 curl -s \
