@@ -22,7 +22,7 @@ F5 XC administration and tenant management
 
 ## Documentation
 
-Full documentation is available at **[https://f5-sales-demo.github.io/administration/](https://f5-sales-demo.github.io/administration/)**.
+Full documentation is available at __[https://f5-sales-demo.github.io/administration/](https://f5-sales-demo.github.io/administration/)__.
 
 ## Contributing
 
